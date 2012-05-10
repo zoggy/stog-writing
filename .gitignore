@@ -1,0 +1,9 @@
+.chamo*
+*.cm*
+*.o
+*.a
+*.annot
+bib_lexer.ml
+bib_parser.mli
+bib_parser.ml
+
