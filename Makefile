@@ -23,16 +23,19 @@ opt: $(PLUGIN)
 byte: $(PLUGIN_BYTE)
 
 stog_writing.cmxs: bibtex.cmi bib_parser.cmi bib_parser.cmx bib_lexer.cmx stog_writing.cmx
-	$(OCAMLFIND) ocamlopt $(COMPFLAGS) -shared -o $@ \
+	$(OCAMLFIND) ocamlopt -package menhirLib -linkpkg -shared -o $@ \
 	$(LINKFLAGS) `ls $^ | grep -v cmi`
 
 stog_writing.cma: bibtex.cmi bib_parser.cmi bib_parser.cmo bib_lexer.cmo stog_writing.cmo
-	$(OCAMLFIND) ocamlc -a $(COMPFLAGS) -o $@ \
+	$(OCAMLFIND) ocamlc -a -package menhirLib -linkpkg -o $@ \
 	$(LINKFLAGS_BYTE) `ls $^ | grep -v cmi`
 
 install:
 	$(OCAMLFIND) install stog-writing META \
 	$(PLUGIN) $(PLUGIN_BYTE)
+
+uninstall:
+	$(OCAMLFIND) remove stog-writing
 
 distclean: clean
 

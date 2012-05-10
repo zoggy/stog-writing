@@ -1,0 +1,7 @@
+version = "1.0"
+description = "Stog writing plugin"
+requires = ""
+archive(stog,byte) = "stog_writing.cma"
+archive(stog,native) = "stog_writing.cmxs"
+
+
