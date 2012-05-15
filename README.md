@@ -4,6 +4,18 @@ It allows to use the following elements in pages and posts:
 - footnotes
 - bibliography
 
+## Usage
+
+To install:
+    git clone git@github.com:zoggy/stog-writing.git
+    cd stog-writing
+    make all install
+
+This will install the stog-writing package with ocamlfind.
+
+To use:
+    stog --package stog-writing ...
+
 ## Footnotes
 
 Footnotes are indicated with the following syntax:
