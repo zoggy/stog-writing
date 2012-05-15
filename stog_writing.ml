@@ -197,14 +197,17 @@ let fun_cite env atts subs =
           subs
 ;;
 
-let get_sorted_entries sort_fields =
+let get_sorted_entries ~reverse sort_fields =
   let entries = Stog_types.Str_map.fold
     (fun k v acc -> v :: acc) !bib_entries []
   in
   let comp e1 e2 =
     let l1 = List.map (get_bib_entry_field e1) sort_fields in
     let l2 = List.map (get_bib_entry_field e2) sort_fields in
-    Pervasives.compare l1 l2
+    if reverse then
+      Pervasives.compare l2 l1
+    else
+      Pervasives.compare l1 l2
   in
   List.sort comp entries
 ;;
@@ -219,9 +222,10 @@ let xml_of_bib_entry env entry =
 
 let fun_bibliography env atts subs =
   init ();
+  let reverse = Xtmpl.opt_arg ~def: "false" atts "reverse" = "true" in
   let sorting_fields = Xtmpl.opt_arg ~def: "id" atts "sort" in
   let sorting_fields = Stog_misc.split_string sorting_fields [ ',' ; ';' ] in
-  let entries = get_sorted_entries sorting_fields in
+  let entries = get_sorted_entries ~reverse sorting_fields in
   List.map (xml_of_bib_entry env) entries
 ;;
 
