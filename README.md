@@ -7,6 +7,7 @@ It allows to use the following elements in pages and posts:
 ## Usage
 
 To install:
+
     git clone git@github.com:zoggy/stog-writing.git
     cd stog-writing
     make all install
@@ -14,6 +15,7 @@ To install:
 This will install the stog-writing package with ocamlfind.
 
 To use:
+
     stog --package stog-writing ...
 
 ## Footnotes
