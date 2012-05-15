@@ -84,3 +84,7 @@ field can be set to `true` to reverse the order of the sort. Example:
 
     <bibliography reverse="true" sort="year"/>
 
+The bibliography command will output each bibliography entry
+using the `bib_entry.tmpl` template. You can use the `bib_entry.tmpl`
+file included as an example. You will have to place it in your stog
+template directory.
