@@ -43,10 +43,10 @@ open Bibtex
 %public entries: list(entry) option(EOF) { $1 }
 
 entry:
-  k=Entry_kind LBRACE id=Ident COMMA l=separated_list(COMMA, field) RBRACE
+  k=Entry_kind LBRACE id=Ident COMMA l=list(field) RBRACE
   {
     { kind = k ; id = id ; fields = l }
   }
 field:
-  n=Ident EQUAL s=String { (n, s) }
-| n=Ident s=Equal_braced_string { (n, s) }
+  n=Ident EQUAL s=String option(COMMA) { (n, s) }
+| n=Ident s=Equal_braced_string option(COMMA) { (n, s) }

@@ -35,7 +35,7 @@ let string_buffer = Buffer.create 256 ;;
 let lowercase = ['a'-'z']
 let uppercase = ['A'-'Z']
 let digit = ['0'-'9']
-let identchar = lowercase | uppercase | digit | '_'
+let identchar = lowercase | uppercase | digit | '_' | ':'
 
 let entry_kind = '@'(lowercase|uppercase)+
 
