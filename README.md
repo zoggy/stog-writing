@@ -1,27 +1,32 @@
 This is a plugin for [Stog](http://zoggy.github.com/stog/).
 
-Ths plugin allows to use the following elements in pages and posts:
+It allows to use the following elements in pages and posts:
 - footnotes
 - bibliography
 
 ## Footnotes
 
 Footnotes are indicated with the following syntax:
+
     <note>...</note>
+
 As usual, you can put any xml in the <note> node, it will be
 rewritten using the current environment.
 
 For this to work, all the XML tree containing notes must be
 included in a
+
     <prepare-notes>
     ...
     </prepare-notes>
+
 node.
 
 At last, all footnotes are inserted when a <notes/> node is encountered.
 Numbering is automatic.
 
 Example:
+
     <prepare-notes>
       ...
       bla bla bla<note>Hey, this is a footnote</note>.
@@ -32,3 +37,36 @@ Example:
     </prepare-notes>
 
 ## Bibliography
+
+To define the bibliograpy, you must add to the root `index.html` two
+fields:
+
+    bib-files=file1.bib,file2.bib,...
+    bib-page=yourpage
+
+`bib-files` indicates the files to read entries from, in bibtex format.
+`bib-page` indicates in which page the bibliography will be. This page
+must exist.
+
+In your pages and posts, you can use this syntax to cite an entry:
+
+    <cite href="entryid"/>
+
+The `format` attribute can be used to specify the format of the text of the link,
+for example:
+
+    <cite href="entryid" format="$(author): $(title)"/>
+
+will display the contents of the fields `author` and `title` of the entry.
+The default format is `$(id)`.
+
+To include the complete list of entries, use the following syntax:
+
+    <bibliography/>
+
+The `sort` attribute can be used to indicate which fields must be used
+to sort the entries. Default is to sort on the `id` field. The `reverse`
+field can be set to `true` to reverse the order of the sort. Example:
+
+    <bibliography reverse="true" sort="year"/>
+
