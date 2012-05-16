@@ -67,13 +67,28 @@ In your pages and posts, you can use this syntax to cite an entry:
 
     <cite href="entryid"/>
 
-The `format` attribute can be used to specify the format of the text of the link,
-for example:
+The format of the reference can be set by various means, in order
+of priority:
 
-    <cite href="entryid" format="$(author): $(title)"/>
+- in the children of the <cite> node, for example:
 
-will display the contents of the fields `author` and `title` of the entry.
-The default format is `$(id)`.
+        <cite href="..."><bib-entry-author/>, <i><bib-entry-title/></i></cite>
+
+- using the `format` attribute, for example:
+
+        <cite href="entryid" format="$(author): $(title)"/>
+
+- setting `cite-format` in the environment, for example in the header
+  of the page/article:
+
+        cite-format=<bib-entry-author/>, <i><bib-entry-title/></i>
+
+These examples will display the contents of the fields `author` and `title`
+of the entry as text for the reference link.
+
+The default format is
+
+    [<bib-entry-id/>]
 
 To include the complete list of entries, use the following syntax:
 
