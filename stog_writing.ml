@@ -147,14 +147,25 @@ let fun_bib_field e env atts _ =
 ;;
 
 let add_bib_entry_env env e =
-  Xtmpl.env_add "bib-field" (fun_bib_field e) env
+  let env = List.fold_left
+     (fun env (fd, v) ->
+       Xtmpl.env_add_att
+       (Printf.sprintf "bib-entry-%s" fd) v env
+    )
+     env
+     e.Bibtex.fields
+  in
+  let env = Xtmpl.env_add "bib-field" (fun_bib_field e) env in
+  let env = Xtmpl.env_add_att "bib-entry-id" e.Bibtex.id env in
+  let env = Xtmpl.env_add_att "bib-entry-kind" e.Bibtex.kind env in
+  env
 ;;
 
 let xml_of_format fmt =
   let re = Str.regexp "\\$(\\([a-zA-Z0-9:_]+\\))" in
   let f _ =
     let field = Str.matched_group 1 fmt in
-    Printf.sprintf "<bib-field name=%S/>" field
+    Printf.sprintf "<bib-entry-%s/>" field
   in
   let xml_s = Str.global_substitute re f fmt in
   Xtmpl.xml_of_string xml_s
@@ -170,16 +181,20 @@ let escape_bib_entry_id s =
   done;
   Buffer.contents b
 ;;
+
+let mk_bib_entry_anchor e =
+  Printf.sprintf "bibentry_%s" (escape_bib_entry_id e.Bibtex.id)
+;;
+
 let mk_bib_entry_link e subs =
-  let href = Printf.sprintf "<site-url/>/%s.html#bibentry_%s" !bib_page
-    (escape_bib_entry_id e.Bibtex.id)
+  let href = Printf.sprintf "<site-url/>/%s.html#%s" !bib_page
+    (mk_bib_entry_anchor e)
   in
   Xtmpl.T ("a", ["href", href], subs)
 ;;
 
 let fun_cite env atts subs =
   init();
-  let format = Xtmpl.opt_arg ~def: "[$(id)]" atts "format" in
   match Xtmpl.get_arg atts "href" with
     None ->
       error "Missing href in <cite>";
@@ -188,8 +203,21 @@ let fun_cite env atts subs =
       try
         let entry = Stog_types.Str_map.find href !bib_entries in
         let env = add_bib_entry_env env entry in
-        let xml = xml_of_format format in
-        let text = Xtmpl.apply_to_xmls env [xml] in
+        let xml =
+          match subs with
+            [] ->
+              begin
+                match Xtmpl.get_arg atts "format" with
+                  Some format -> [xml_of_format format]
+                | None ->
+                    let node = "<cite-format/>" in
+                    let s = Xtmpl.apply env node in
+                    let s = if s = node then "[<bib-field name=\"id\"/>]" else s in
+                    [ Xtmpl.xml_of_string s ]
+              end
+          | _ -> subs
+        in
+        let text = Xtmpl.apply_to_xmls env xml in
         [mk_bib_entry_link entry text]
       with
         Not_found ->
@@ -216,7 +244,7 @@ let xml_of_bib_entry env entry =
   let stog = Stog_plug.stog () in
   let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib_entry.tmpl" in
   let env = add_bib_entry_env env entry in
-  Xtmpl.T ("div", ["class", "bib-entry" ; "id", escape_bib_entry_id entry.Bibtex.id ],
+  Xtmpl.T ("div", ["class", "bib-entry" ; "id", mk_bib_entry_anchor entry ],
    [Xtmpl.xml_of_string (Xtmpl.apply_from_file env tmpl)])
 ;;
 

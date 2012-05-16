@@ -29,6 +29,33 @@
 
 open Bib_parser;;
 
+(*c==v=[String.strip_string]=1.0====*)
+let strip_string s =
+  let len = String.length s in
+  let rec iter_first n =
+    if n >= len then
+      None
+    else
+      match s.[n] with
+        ' ' | '\t' | '\n' | '\r' -> iter_first (n+1)
+      | _ -> Some n
+  in
+  match iter_first 0 with
+    None -> ""
+  | Some first ->
+      let rec iter_last n =
+        if n <= first then
+          None
+        else
+          match s.[n] with
+            ' ' | '\t' | '\n' | '\r' -> iter_last (n-1)
+          |	_ -> Some n
+      in
+      match iter_last (len-1) with
+        None -> String.sub s first 1
+      |	Some last -> String.sub s first ((last-first)+1)
+(*/c==v=[String.strip_string]=1.0====*)
+
 let string_buffer = Buffer.create 256 ;;
 }
 
@@ -73,7 +100,7 @@ rule main = parse
 and string = parse
  "\\\""  { Buffer.add_char string_buffer '"'; string lexbuf }
 | "\\\\" { Buffer.add_char string_buffer '\\'; string lexbuf }
-| '"'  { String (Buffer.contents string_buffer) }
+| '"'  { String (strip_string (Buffer.contents string_buffer)) }
 | _ { Buffer.add_string string_buffer (Lexing.lexeme lexbuf); string lexbuf }
 | eof { failwith "String non terminated." }
 
@@ -81,6 +108,6 @@ and braced = parse
  "\\{"  { Buffer.add_char string_buffer '{'; braced lexbuf }
 | "\\}"  { Buffer.add_char string_buffer '}'; braced lexbuf }
 | "\\\\" { Buffer.add_char string_buffer '\\'; braced lexbuf }
-| '}'  { Equal_braced_string (Buffer.contents string_buffer) }
+| '}'  { Equal_braced_string (strip_string (Buffer.contents string_buffer)) }
 | _ { Buffer.add_string string_buffer (Lexing.lexeme lexbuf); braced lexbuf }
 | eof { failwith "Braced contents non terminated." }
