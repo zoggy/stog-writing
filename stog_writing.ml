@@ -261,5 +261,73 @@ let fun_bibliography env atts subs =
 let () = Stog_plug.register_fun "bibliography" fun_bibliography;;
 let () = Stog_plug.register_fun "cite" fun_cite;;
 
+(** Adding references to paragraphs *)
 
+module Sset = Set.Make
+  (struct type t = string let compare = Pervasives.compare end);;
+let auto_ids = ref Sset.empty;;
 
+let fun_automatic_ids env att subs =
+  auto_ids := Sset.empty;
+  subs
+;;
+
+let add_string b s =
+  for i = 0 to String.length s - 1 do
+    match s.[i] with
+      'a'..'z' | 'A'..'Z' | '0'..'9' | '_' -> Buffer.add_char b s.[i]
+    | _ -> ()
+  done
+;;
+
+let rec text_of_xml b = function
+  Xtmpl.D s -> add_string b s
+| Xtmpl.E (_,subs)
+| Xtmpl.T (_, _, subs) ->
+    text_of_xmls b subs
+and text_of_xmls b l = List.iter (text_of_xml b) l;;
+
+let min_size = 12 ;;
+let create_id xmls =
+  let b = Buffer.create 256 in
+  text_of_xmls b xmls;
+  let s = Stog_misc.strip_string (Buffer.contents b) in
+  prerr_endline (Printf.sprintf "s=%s" s);
+  let len = String.length s in
+  let init =
+    Printf.sprintf "%s%s"
+      (String.sub s 0 (min len min_size))
+      (String.make (min_size - (min len min_size)) '_')
+  in
+  prerr_endline (Printf.sprintf "init = %s" init);
+  let rec iter id n =
+    prerr_endline (Printf.sprintf "id=%s" id);
+    if Sset.mem id !auto_ids then
+      if n < len then
+        iter (Printf.sprintf "%s%c" id s.[n]) (n+1)
+      else
+        iter (id^"_") (n+1)
+    else
+      id
+  in
+  let id = iter init min_size in
+  prerr_endline (Printf.sprintf "forged id=%s" id);
+  auto_ids := Sset.add id !auto_ids;
+  id
+;;
+
+let fun_p env atts subs =
+  match Xtmpl.get_arg atts "id" with
+    Some s ->
+      prerr_endline (Printf.sprintf "found id = %s" s);
+      (* id already present, return same node *)
+      [Xtmpl.T ("p", atts, subs)]
+  | None ->
+     (* create a unique id *)
+     let id = create_id subs in
+     prerr_endline (Printf.sprintf "created id = %s" id);
+     [Xtmpl.T ("p", ("id", id) :: atts, subs)]
+;;
+
+let () = Stog_plug.register_fun "automatic-ids" fun_automatic_ids;;
+let () = Stog_plug.register_fun "p" fun_p;;
