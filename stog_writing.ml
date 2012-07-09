@@ -292,16 +292,13 @@ let create_id xmls =
   let b = Buffer.create 256 in
   text_of_xmls b xmls;
   let s = Stog_misc.strip_string (Buffer.contents b) in
-  prerr_endline (Printf.sprintf "s=%s" s);
   let len = String.length s in
   let init =
     Printf.sprintf "%s%s"
       (String.sub s 0 (min len min_size))
       (String.make (min_size - (min len min_size)) '_')
   in
-  prerr_endline (Printf.sprintf "init = %s" init);
   let rec iter id n =
-    prerr_endline (Printf.sprintf "id=%s" id);
     if Sset.mem id !auto_ids then
       if n < len then
         iter (Printf.sprintf "%s%c" id s.[n]) (n+1)
@@ -311,7 +308,6 @@ let create_id xmls =
       id
   in
   let id = iter init min_size in
-  prerr_endline (Printf.sprintf "forged id=%s" id);
   auto_ids := Sset.add id !auto_ids;
   id
 ;;
@@ -319,14 +315,17 @@ let create_id xmls =
 let fun_p env atts subs =
   match Xtmpl.get_arg atts "id" with
     Some s ->
-      prerr_endline (Printf.sprintf "found id = %s" s);
       (* id already present, return same node *)
       [Xtmpl.T ("p", atts, subs)]
   | None ->
-     (* create a unique id *)
-     let id = create_id subs in
-     prerr_endline (Printf.sprintf "created id = %s" id);
-     [Xtmpl.T ("p", ("id", id) :: atts, subs)]
+      (* create a unique id *)
+      let id = create_id subs in
+      let base_url = Xtmpl.apply env "<site-url/>" in
+      let link =
+        Xtmpl.T ("a", ["class", "paragraph-url" ; "href", "#"^id],
+            [Xtmpl.T ("img", ["src", base_url^"/paragraph-url.png"], [])])
+     in
+     [Xtmpl.T ("p", ("id", id) :: atts, link :: subs)]
 ;;
 
 let () = Stog_plug.register_fun "automatic-ids" fun_automatic_ids;;

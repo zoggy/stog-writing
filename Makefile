@@ -11,7 +11,7 @@ PACKAGES=menhirLib,xtmpl,stog
 MENHIR=menhir
 
 INCLUDES=-I +ocamldoc
-COMPFLAGS=$(INCLUDES) -annot -package $(PACKAGES) -rectypes
+COMPFLAGS=$(INCLUDES) -g -annot -package $(PACKAGES) -rectypes
 LINKFLAGS=$(INCLUDES)
 LINKFLAGS_BYTE=$(INCLUDES)
 
