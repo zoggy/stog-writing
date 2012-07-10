@@ -312,11 +312,11 @@ let create_id xmls =
   id
 ;;
 
-let fun_p env atts subs =
+let fun_p tag env atts subs =
   match Xtmpl.get_arg atts "id" with
     Some s ->
       (* id already present, return same node *)
-      [Xtmpl.T ("p", atts, subs)]
+      raise Xtmpl.No_change
   | None ->
       (* create a unique id *)
       let id = create_id subs in
@@ -325,8 +325,9 @@ let fun_p env atts subs =
         Xtmpl.T ("a", ["class", "paragraph-url" ; "href", "#"^id],
             [Xtmpl.T ("img", ["src", base_url^"/paragraph-url.png"], [])])
      in
-     [Xtmpl.T ("p", ("id", id) :: atts, link :: subs)]
+     [Xtmpl.T (tag, ("id", id) :: atts, subs @ [link])]
 ;;
 
 let () = Stog_plug.register_fun "automatic-ids" fun_automatic_ids;;
-let () = Stog_plug.register_fun "p" fun_p;;
+let () = Stog_plug.register_fun "p" (fun_p "p");;
+let () = Stog_plug.register_fun "pre" (fun_p "pre");;
