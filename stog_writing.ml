@@ -48,7 +48,7 @@ let fun_prepare_notes env args subs =
   [ Xtmpl.T (Xtmpl.tag_env, atts, subs) ]
 ;;
 
-let () = Stog_plug.register_fun "prepare-notes" fun_prepare_notes;;
+let () = Stog_plug.register_rule "prepare-notes" fun_prepare_notes;;
 
 (** Bibliography *)
 
@@ -103,7 +103,7 @@ let init () =
         warning msg;
   end;
   begin
-    try ignore(Stog_types.page_by_human_id stog !bib_page)
+    try ignore(Stog_types.elt_by_human_id stog (Stog_types.human_id_of_string !bib_page))
     with Not_found ->
       let msg = Printf.sprintf "Bibliography page %S unknown." !bib_page in
       error msg
@@ -258,8 +258,8 @@ let fun_bibliography env atts subs =
 ;;
 
 
-let () = Stog_plug.register_fun "bibliography" fun_bibliography;;
-let () = Stog_plug.register_fun "cite" fun_cite;;
+let () = Stog_plug.register_rule "bibliography" fun_bibliography;;
+let () = Stog_plug.register_rule "cite" fun_cite;;
 
 (** Adding references to paragraphs *)
 
@@ -328,6 +328,6 @@ let fun_p tag env atts subs =
      [Xtmpl.T (tag, ("id", id) :: atts, subs @ [link])]
 ;;
 
-let () = Stog_plug.register_fun "automatic-ids" fun_automatic_ids;;
-let () = Stog_plug.register_fun "p" (fun_p "p");;
-let () = Stog_plug.register_fun "pre" (fun_p "pre");;
+let () = Stog_plug.register_rule "automatic-ids" fun_automatic_ids;;
+let () = Stog_plug.register_rule "p" (fun_p "p");;
+let () = Stog_plug.register_rule "pre" (fun_p "pre");;
