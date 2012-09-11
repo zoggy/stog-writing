@@ -7,7 +7,7 @@ OCAMLDOC=ocamldoc
 OCAMLLEX=ocamllex
 OCAMLFIND=ocamlfind
 
-PACKAGES=menhirLib,xtmpl,stog
+PACKAGES=menhirLib,xtmpl,stog,config-file
 MENHIR=menhir
 
 INCLUDES=-I +ocamldoc

@@ -5,6 +5,30 @@ let verbose = Stog_plug.verbose ~info;;
 let warning = Stog_plug.warning ~info;;
 let error = Stog_plug.error ~info;;
 
+let rc_file stog =
+  Filename.concat (Stog_config.config_dir stog.Stog_types.stog_dir) "config-writing"
+;;
+
+let automatic_ids_default = ref true;;
+let automatic_ids_by_type = ref Stog_types.Str_map.empty ;;
+
+let load_config stog =
+  let module CF = Config_file in
+  let group = new CF.group in
+  let o_ids_def = new CF.bool_cp ~group ["automatic_ids"; "default"] true "" in
+  let o_ids_typ = new CF.list_cp
+    (CF.tuple2_wrappers CF.string_wrappers CF.bool_wrappers) ~group
+    ["automatic_ids"; "by_type"] [] "pairs (type, bool) specifying whether to use automatic ids on element types"
+  in
+  let rc_file = rc_file stog in
+  group#read rc_file;
+  group#write rc_file;
+  automatic_ids_default := o_ids_def#get ;
+  automatic_ids_by_type :=
+    List.fold_left (fun acc (t, b) -> Stog_types.Str_map.add t b acc)
+    !automatic_ids_by_type o_ids_typ#get
+;;
+
 (** Notes *)
 
 let note_source_id n = Printf.sprintf "source_note_%d" n;;
@@ -265,12 +289,6 @@ let () = Stog_plug.register_rule "cite" fun_cite;;
 
 module Sset = Set.Make
   (struct type t = string let compare = Pervasives.compare end);;
-let auto_ids = ref Sset.empty;;
-
-let fun_automatic_ids env att subs =
-  auto_ids := Sset.empty;
-  subs
-;;
 
 let add_string b s =
   for i = 0 to String.length s - 1 do
@@ -279,7 +297,6 @@ let add_string b s =
     | _ -> ()
   done
 ;;
-
 let rec text_of_xml b = function
   Xtmpl.D s -> add_string b s
 | Xtmpl.E (_,subs)
@@ -288,7 +305,7 @@ let rec text_of_xml b = function
 and text_of_xmls b l = List.iter (text_of_xml b) l;;
 
 let min_size = 12 ;;
-let create_id xmls =
+let create_id auto_ids xmls =
   let b = Buffer.create 256 in
   text_of_xmls b xmls;
   let s = Stog_misc.strip_string (Buffer.contents b) in
@@ -312,14 +329,14 @@ let create_id xmls =
   id
 ;;
 
-let fun_p tag env atts subs =
+let fun_p tag auto_ids env atts subs =
   match Xtmpl.get_arg atts "id" with
     Some s ->
       (* id already present, return same node *)
       raise Xtmpl.No_change
   | None ->
       (* create a unique id *)
-      let id = create_id subs in
+      let id = create_id auto_ids subs in
       let base_url = Xtmpl.apply env "<site-url/>" in
       let link =
         Xtmpl.T ("a", ["class", "paragraph-url" ; "href", "#"^id],
@@ -328,6 +345,24 @@ let fun_p tag env atts subs =
      [Xtmpl.T (tag, ("id", id) :: atts, subs @ [link])]
 ;;
 
-let () = Stog_plug.register_rule "automatic-ids" fun_automatic_ids;;
-let () = Stog_plug.register_rule "p" (fun_p "p");;
-let () = Stog_plug.register_rule "pre" (fun_p "pre");;
+let stage2_p stog elt =
+  let b =
+    try Stog_types.Str_map.find elt.Stog_types.elt_type !automatic_ids_by_type
+    with Not_found -> !automatic_ids_default
+  in
+  if b then
+    begin
+      let auto_ids = ref Sset.empty in
+      let rules = Stog_html.build_rules stog in
+      let rules = ("p", fun_p "p" auto_ids) :: ("pre", fun_p "pre" auto_ids) :: rules in
+      let env = Xtmpl.env_of_list rules in
+      let out = Xtmpl.apply_to_xmls env elt.Stog_types.elt_out in
+      { elt with Stog_types.elt_out = out }
+    end
+  else
+    elt
+;;
+
+let () = Stog_plug.register_stage2_fun stage2_p;;
+
+
