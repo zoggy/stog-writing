@@ -345,6 +345,37 @@ let fun_p tag auto_ids env atts subs =
      [Xtmpl.T (tag, ("id", id) :: atts, subs @ [link])]
 ;;
 
+let rec gather_existing_ids =
+  let rec f map = function
+    Xtmpl.D _ -> map
+  | Xtmpl.E (((_,tag),atts),subs) ->
+      let g acc = function
+        (("",s), v) -> (s, v) :: acc
+      | _ -> acc
+      in
+      let atts = List.fold_left g [] atts in
+      f map (Xtmpl.T (tag, atts, subs))
+  | Xtmpl.T (tag, atts, subs) ->
+      let map =
+        match tag with
+          "p" | "pre" ->
+            begin
+              match Xtmpl.get_arg atts "id" with
+                None -> map
+              | Some id ->
+                  try
+                    ignore(Sset.add id map);
+                    failwith (Printf.sprintf "id %S defined twice in the same element." id)
+                  with Not_found ->
+                      Sset.add id map
+            end
+        | _ -> map
+      in
+      List.fold_left f map subs
+  in
+  List.fold_left f
+;;
+
 let stage2_p stog elt =
   let b =
     try Stog_types.Str_map.find elt.Stog_types.elt_type !automatic_ids_by_type
@@ -353,6 +384,7 @@ let stage2_p stog elt =
   if b then
     begin
       let auto_ids = ref Sset.empty in
+      auto_ids := gather_existing_ids !auto_ids elt.Stog_types.elt_out ;
       let rules = Stog_html.build_rules stog in
       let rules = ("p", fun_p "p" auto_ids) :: ("pre", fun_p "pre" auto_ids) :: rules in
       let env = Xtmpl.env_of_list rules in
