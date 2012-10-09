@@ -9,8 +9,10 @@ let rc_file stog =
   Filename.concat (Stog_config.config_dir stog.Stog_types.stog_dir) "config-writing"
 ;;
 
+module Smap = Stog_types.Str_map;;
+
 let automatic_ids_default = ref true;;
-let automatic_ids_by_type = ref Stog_types.Str_map.empty ;;
+let automatic_ids_by_type = ref Smap.empty ;;
 
 let load_config stog =
   let module CF = Config_file in
@@ -25,7 +27,7 @@ let load_config stog =
   group#write rc_file;
   automatic_ids_default := o_ids_def#get ;
   automatic_ids_by_type :=
-    List.fold_left (fun acc (t, b) -> Stog_types.Str_map.add t b acc)
+    List.fold_left (fun acc (t, b) -> Smap.add t b acc)
     !automatic_ids_by_type o_ids_typ#get
 ;;
 
@@ -76,24 +78,24 @@ let () = Stog_plug.register_rule "prepare-notes" fun_prepare_notes;;
 
 (** Bibliography *)
 
-let bib_entries = ref Stog_types.Str_map.empty;;
-let bib_entries_by_hid = ref Stog_types.Str_map.empty;;
+let bib_entries = ref Smap.empty;;
+let bib_entries_by_hid = ref Smap.empty;;
 
 let add_bib_entry hid e =
   let (m, by_hid) =
     try
-      ignore(Stog_types.Str_map.find e.Bibtex.id !bib_entries);
+      ignore(Smap.find e.Bibtex.id !bib_entries);
       warning (Printf.sprintf "duplicate entry %S" e.Bibtex.id);
       raise Not_found
     with Not_found ->
-      let m = Stog_types.Str_map.add e.Bibtex.id (hid, e) !bib_entries in
+      let m = Smap.add e.Bibtex.id (hid, e) !bib_entries in
       let by_hid =
           let s_hid = Stog_types.string_of_human_id hid in
           let l =
-            try Stog_types.Str_map.find s_hid !bib_entries_by_hid
+            try Smap.find s_hid !bib_entries_by_hid
             with Not_found -> []
           in
-          Stog_types.Str_map.add s_hid (e :: l) !bib_entries_by_hid
+          Smap.add s_hid (e :: l) !bib_entries_by_hid
       in
       (m, by_hid)
   in
@@ -226,7 +228,7 @@ let fun_cite env atts subs =
       subs
   | Some href ->
       try
-        let (hid, entry) = Stog_types.Str_map.find href !bib_entries in
+        let (hid, entry) = Smap.find href !bib_entries in
         let env = add_bib_entry_env env entry in
         let xml =
           match subs with
@@ -252,7 +254,7 @@ let fun_cite env atts subs =
 
 let get_sorted_entries ~reverse sort_fields s_hid =
   let entries =
-    try Stog_types.Str_map.find s_hid !bib_entries_by_hid
+    try Smap.find s_hid !bib_entries_by_hid
     with
       Not_found -> []
   in
@@ -275,15 +277,17 @@ let xml_of_bib_entry env entry =
    [Xtmpl.xml_of_string (Xtmpl.apply_from_file env tmpl)])
 ;;
 
+let get_hid env =
+  let node = "<"^Stog_tags.elt_hid^"/>" in
+  let s = Xtmpl.apply env node in
+  if s = node then assert false else s
+;;
+
 let fun_bibliography env atts subs =
   let reverse = Xtmpl.opt_arg ~def: "false" atts "reverse" = "true" in
   let sorting_fields = Xtmpl.opt_arg ~def: "id" atts "sort" in
   let sorting_fields = Stog_misc.split_string sorting_fields [ ',' ; ';' ] in
-  let hid =
-    let node = "<"^Stog_tags.elt_hid^"/>" in
-    let s = Xtmpl.apply env node in
-    if s = node then assert false else s
-  in
+  let hid = get_hid env in
   let entries = get_sorted_entries ~reverse sorting_fields hid in
   List.map (xml_of_bib_entry env) entries
 ;;
@@ -292,10 +296,55 @@ let fun_bibliography env atts subs =
 let () = Stog_plug.register_rule "bibliography" fun_bibliography;;
 let () = Stog_plug.register_rule "cite" fun_cite;;
 
-(** Adding references to paragraphs *)
+(** Adding references to paragraphs and
+  handling blocks (like environments in latex).
+*)
 
 module Sset = Set.Make
   (struct type t = string let compare = Pervasives.compare end);;
+
+
+let blocks = ref Smap.empty;;
+let add_block s_hid id title =
+  let map =
+    try Smap.find s_hid !blocks
+    with Not_found -> Smap.empty
+  in
+  (
+   try
+     ignore (Smap.find id map);
+     warning (Printf.sprintf "Multiple blocks with id %S for hid=%S" id s_hid);
+   with Not_found -> ()
+  );
+  let map = Smap.add id title map in
+  blocks := Smap.add s_hid map !blocks
+;;
+let block_title s_hid id =
+  try Smap.find id (Smap.find s_hid !blocks)
+  with Not_found ->
+    warning (Printf.sprintf "Unknown block for id=%S and hid=%S" id s_hid);
+    "???"
+;;
+
+let counters = ref Smap.empty;;
+let bump_counter s_hid name =
+  let map =
+    try Smap.find s_hid !counters
+    with Not_found -> Smap.empty
+  in
+  let cpt =
+    try Smap.find name map + 1
+    with Not_found -> 1
+  in
+  let map = Smap.add name cpt map in
+  counters := Smap.add s_hid map !counters;
+  cpt
+;;
+
+let get_counter s_hid name =
+  try Smap.find name (Smap.find s_hid !counters)
+  with Not_found -> 0
+;;
 
 let add_string b s =
   for i = 0 to String.length s - 1 do
@@ -304,6 +353,74 @@ let add_string b s =
     | _ -> ()
   done
 ;;
+
+
+let tag_block = "block";;
+let tag_counter = "counter";;
+
+let fun_counter env atts subs =
+  match Xtmpl.get_arg atts "counter-name" with
+    None -> subs
+  | Some name ->
+      let hid = get_hid env in
+      let cpt = get_counter hid name in
+      [Xtmpl.D (string_of_int cpt)]
+;;
+
+let fun_block env atts subs =
+  match Xtmpl.get_arg atts "href" with
+    Some _ -> raise Xtmpl.No_change
+  | None ->
+      let stog = Stog_plug.stog () in
+      let hid = get_hid env in
+      let id_opt = Xtmpl.get_arg atts "id" in
+      let label_opt = Xtmpl.get_arg atts "label" in
+      let class_opt = Xtmpl.get_arg atts "class" in
+      let title_opt = Xtmpl.get_arg atts "title" in
+      let cpt_opt =
+        match Xtmpl.get_arg atts "counter-name" with
+          None -> None
+        | Some name -> Some (bump_counter hid name)
+      in
+      let title =
+        match label_opt with
+          None -> failwith "No label for block"
+        | Some label ->
+            match title_opt, cpt_opt with
+              None, None -> label
+            | None, Some cpt -> Printf.sprintf "%s %d." label cpt
+            | Some t, None -> Printf.sprintf "%s: %s" label t
+            | Some t, Some cpt -> Printf.sprintf "%s %d: %s" label cpt t
+      in
+      (match id_opt with None -> () | Some id -> add_block hid id title);
+      let env = Stog_html.env_of_vars ~env (("title", title) :: atts) in
+      let tmpl_file =
+        match class_opt with
+          None -> "block.tmpl"
+        | Some c -> Printf.sprintf "block-%s.tmpl" c
+      in
+      let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir tmpl_file in
+      [Xtmpl.xml_of_string (Xtmpl.apply_from_file env tmpl)]
+;;
+
+let fun_block_stage2 env atts subs =
+  match Xtmpl.get_arg atts "href" with
+    None -> subs
+  | Some href ->
+      let stog = Stog_plug.stog () in
+      let hid = get_hid env in
+      let title = block_title hid href in
+      let (_,elt) = Stog_types.elt_by_human_id stog (Stog_types.human_id_of_string hid) in
+      let url = Printf.sprintf "%s#%s" (Stog_html.elt_url stog elt) href in
+      [Xtmpl.T ("a", ["href", url], [Xtmpl.xml_of_string title])]
+;;
+
+let () = Stog_plug.register_rule tag_counter fun_counter;;
+let () = Stog_plug.register_rule tag_block fun_block;;
+let () = Stog_plug.register_stage1_fun
+  (fun _ -> Stog_plug.register_rule tag_block fun_block_stage2);;
+
+
 let rec text_of_xml b = function
   Xtmpl.D s -> add_string b s
 | Xtmpl.E (_,subs)
@@ -385,7 +502,7 @@ let rec gather_existing_ids =
 
 let stage2_p stog elt =
   let b =
-    try Stog_types.Str_map.find elt.Stog_types.elt_type !automatic_ids_by_type
+    try Smap.find elt.Stog_types.elt_type !automatic_ids_by_type
     with Not_found -> !automatic_ids_default
   in
   if b then
@@ -403,5 +520,3 @@ let stage2_p stog elt =
 ;;
 
 let () = Stog_plug.register_stage2_fun stage2_p;;
-
-
