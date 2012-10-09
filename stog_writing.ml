@@ -77,21 +77,31 @@ let () = Stog_plug.register_rule "prepare-notes" fun_prepare_notes;;
 (** Bibliography *)
 
 let bib_entries = ref Stog_types.Str_map.empty;;
-let bib_page = ref "bibliography";;
+let bib_entries_by_hid = ref Stog_types.Str_map.empty;;
 
-let add_bib_entry e =
-  let m =
+let add_bib_entry hid e =
+  let (m, by_hid) =
     try
       ignore(Stog_types.Str_map.find e.Bibtex.id !bib_entries);
       warning (Printf.sprintf "duplicate entry %S" e.Bibtex.id);
       raise Not_found
     with Not_found ->
-      Stog_types.Str_map.add e.Bibtex.id e !bib_entries
+      let m = Stog_types.Str_map.add e.Bibtex.id (hid, e) !bib_entries in
+      let by_hid =
+          let s_hid = Stog_types.string_of_human_id hid in
+          let l =
+            try Stog_types.Str_map.find s_hid !bib_entries_by_hid
+            with Not_found -> []
+          in
+          Stog_types.Str_map.add s_hid (e :: l) !bib_entries_by_hid
+      in
+      (m, by_hid)
   in
-  bib_entries := m
+  bib_entries := m;
+  bib_entries_by_hid := by_hid
 ;;
 
-let add_bib_file file =
+let add_bib_file page file =
   verbose (Printf.sprintf "loading bibtex file %S" file);
   try
     let inch = open_in file in
@@ -107,48 +117,37 @@ let add_bib_file file =
           failwith msg
     in
     close_in inch;
-    List.iter add_bib_entry entries
+    List.iter (add_bib_entry page) entries
   with
     Sys_error s
   | Failure s ->
       error s
 ;;
 
-let init () =
-  let stog = Stog_plug.stog () in
-  begin
-    try
-      bib_page := List.assoc "bib-page" stog.Stog_types.stog_vars;
-    with Not_found ->
-        let msg =
-          Printf.sprintf "No bib-page field in stog variables ; using %s as page for the bibliography"
-          !bib_page
+let init_bib stog =
+  let f_elt elt_id elt =
+    match elt.Stog_types.elt_type with
+      "bibliography" ->
+        let files =
+          try
+            let l =
+              Stog_misc.split_string
+              (List.assoc "bib-files" elt.Stog_types.elt_vars)
+              [','; ';']
+            in
+            List.map Stog_misc.strip_string l
+          with Not_found ->
+              warning (Printf.sprintf "No bib-files specified in %S" elt.Stog_types.elt_src);
+              []
         in
-        warning msg;
-  end;
-  begin
-    try ignore(Stog_types.elt_by_human_id stog (Stog_types.human_id_of_string !bib_page))
-    with Not_found ->
-      let msg = Printf.sprintf "Bibliography page %S unknown." !bib_page in
-      error msg
-  end;
-  let files =
-    try
-      let l =
-        Stog_misc.split_string
-          (List.assoc "bib-files" stog.Stog_types.stog_vars)
-          [','; ';']
-      in
-      List.map Stog_misc.strip_string l
-    with _ -> []
+        List.iter (add_bib_file elt.Stog_types.elt_human_id) files
+    | _ -> ()
   in
-  List.iter add_bib_file files
+  Stog_tmap.iter f_elt stog.Stog_types.stog_elts;
+  stog
 ;;
 
-let init =
-  let init_done = ref false in
-  fun () -> if !init_done then () else (init () ; init_done := true)
-;;
+let () = Stog_plug.register_stage0_fun init_bib;;
 
 let get_bib_entry_field entry = function
   "id" -> entry.Bibtex.id
@@ -210,22 +209,24 @@ let mk_bib_entry_anchor e =
   Printf.sprintf "bibentry_%s" (escape_bib_entry_id e.Bibtex.id)
 ;;
 
-let mk_bib_entry_link e subs =
-  let href = Printf.sprintf "<site-url/>/%s.html#%s" !bib_page
+let mk_bib_entry_link hid e subs =
+  let stog = Stog_plug.stog () in
+  let (_, elt) = Stog_types.elt_by_human_id stog hid in
+  let href = Printf.sprintf "%s#%s"
+    (Stog_html.elt_url stog elt)
     (mk_bib_entry_anchor e)
   in
   Xtmpl.T ("a", ["href", href], subs)
 ;;
 
 let fun_cite env atts subs =
-  init();
   match Xtmpl.get_arg atts "href" with
     None ->
       error "Missing href in <cite>";
       subs
   | Some href ->
       try
-        let entry = Stog_types.Str_map.find href !bib_entries in
+        let (hid, entry) = Stog_types.Str_map.find href !bib_entries in
         let env = add_bib_entry_env env entry in
         let xml =
           match subs with
@@ -242,16 +243,18 @@ let fun_cite env atts subs =
           | _ -> subs
         in
         let text = Xtmpl.apply_to_xmls env xml in
-        [mk_bib_entry_link entry text]
+        [mk_bib_entry_link hid entry text]
       with
         Not_found ->
           error (Printf.sprintf "Unknown bib entry %S" href);
           subs
 ;;
 
-let get_sorted_entries ~reverse sort_fields =
-  let entries = Stog_types.Str_map.fold
-    (fun k v acc -> v :: acc) !bib_entries []
+let get_sorted_entries ~reverse sort_fields s_hid =
+  let entries =
+    try Stog_types.Str_map.find s_hid !bib_entries_by_hid
+    with
+      Not_found -> []
   in
   let comp e1 e2 =
     let l1 = List.map (get_bib_entry_field e1) sort_fields in
@@ -273,11 +276,15 @@ let xml_of_bib_entry env entry =
 ;;
 
 let fun_bibliography env atts subs =
-  init ();
   let reverse = Xtmpl.opt_arg ~def: "false" atts "reverse" = "true" in
   let sorting_fields = Xtmpl.opt_arg ~def: "id" atts "sort" in
   let sorting_fields = Stog_misc.split_string sorting_fields [ ',' ; ';' ] in
-  let entries = get_sorted_entries ~reverse sorting_fields in
+  let hid =
+    let node = "<"^Stog_tags.elt_hid^"/>" in
+    let s = Xtmpl.apply env node in
+    if s = node then assert false else s
+  in
+  let entries = get_sorted_entries ~reverse sorting_fields hid in
   List.map (xml_of_bib_entry env) entries
 ;;
 

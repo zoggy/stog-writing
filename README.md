@@ -53,15 +53,11 @@ Example:
 
 ## Bibliography
 
-To define the bibliograpy, you must add to the root `index.html` two
-fields:
+To define the bibliograpy, you must add one or more elements with a "bib-files" field.
 
-    bib-files=file1.bib,file2.bib,...
-    bib-page=yourpage
+    bib-files="file1.bib,file2.bib,..."
 
 `bib-files` indicates the files to read entries from, in bibtex format.
-`bib-page` indicates in which page the bibliography will be. This page
-must exist.
 
 In your pages and posts, you can use this syntax to cite an entry:
 
@@ -90,7 +86,8 @@ The default format is
 
     [<bib-entry-id/>]
 
-To include the complete list of entries, use the following syntax:
+To include the complete list of entries, use the following syntax
+in the element having the "bib-files" field:
 
     <bibliography/>
 
