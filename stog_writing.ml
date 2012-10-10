@@ -550,7 +550,7 @@ let stage2_p stog elt =
     try Smap.find elt.Stog_types.elt_type !automatic_ids_by_type
     with Not_found -> !automatic_ids_default
   in
-  let rules = Stog_html.build_rules stog in
+  let rules = Stog_html.build_rules stog elt in
   let rules =
     if b then
       begin
