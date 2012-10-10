@@ -142,22 +142,18 @@ let add_bib_file page file =
 
 let init_bib stog =
   let f_elt elt_id elt =
-    match elt.Stog_types.elt_type with
-      "bibliography" ->
-        let files =
-          try
-            let l =
-              Stog_misc.split_string
-              (List.assoc "bib-files" elt.Stog_types.elt_vars)
-              [','; ';']
-            in
-            List.map Stog_misc.strip_string l
-          with Not_found ->
-              warning (Printf.sprintf "No bib-files specified in %S" elt.Stog_types.elt_src);
-              []
+    let files =
+      try
+        let l =
+          Stog_misc.split_string
+          (List.assoc "bib-files" elt.Stog_types.elt_vars)
+          [','; ';']
         in
-        List.iter (add_bib_file elt.Stog_types.elt_human_id) files
-    | _ -> ()
+        List.map Stog_misc.strip_string l
+      with Not_found ->
+          []
+    in
+    List.iter (add_bib_file elt.Stog_types.elt_human_id) files
   in
   Stog_tmap.iter f_elt stog.Stog_types.stog_elts;
   stog
