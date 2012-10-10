@@ -550,18 +550,20 @@ let stage2_p stog elt =
     try Smap.find elt.Stog_types.elt_type !automatic_ids_by_type
     with Not_found -> !automatic_ids_default
   in
-  if b then
-    begin
-      let auto_ids = ref Sset.empty in
-      auto_ids := gather_existing_ids !auto_ids elt.Stog_types.elt_out ;
-      let rules = Stog_html.build_rules stog in
-      let rules = ("p", fun_p "p" auto_ids) :: ("pre", fun_p "pre" auto_ids) :: rules in
-      let env = Xtmpl.env_of_list rules in
-      let out = Xtmpl.apply_to_xmls env elt.Stog_types.elt_out in
-      { elt with Stog_types.elt_out = out }
-    end
-  else
-    elt
+  let rules = Stog_html.build_rules stog in
+  let rules =
+    if b then
+      begin
+        let auto_ids = ref Sset.empty in
+        auto_ids := gather_existing_ids !auto_ids elt.Stog_types.elt_out ;
+        ("p", fun_p "p" auto_ids) :: ("pre", fun_p "pre" auto_ids) :: rules
+      end
+    else
+      rules
+  in
+  let env = Xtmpl.env_of_list rules in
+  let out = Xtmpl.apply_to_xmls env elt.Stog_types.elt_out in
+  { elt with Stog_types.elt_out = out }
 ;;
 
 let () = Stog_plug.register_stage2_fun stage2_p;;
