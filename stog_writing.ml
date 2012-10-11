@@ -88,7 +88,7 @@ let fun_prepare_notes env args subs =
   [ Xtmpl.T (Xtmpl.tag_env, atts, subs) ]
 ;;
 
-let () = Stog_plug.register_rule "prepare-notes" fun_prepare_notes;;
+let rules_notes = [ "prepare_notes", fun_prepare_notes ];;
 
 (** Bibliography *)
 
@@ -314,9 +314,14 @@ let fun_bibliography env atts subs =
   List.map (xml_of_bib_entry env) entries
 ;;
 
+let rules_bib = [
+    "bibliography", fun_bibliography ;
+    "cite", fun_cite ;
+  ];;
 
-let () = Stog_plug.register_rule "bibliography" fun_bibliography;;
-let () = Stog_plug.register_rule "cite" fun_cite;;
+let () = List.iter
+  (fun (name,f) -> Stog_plug.register_rule name f) rules_bib
+;;
 
 (** Adding references to paragraphs and
   handling blocks (like environments in latex).
@@ -388,8 +393,9 @@ let fun_counter env atts subs =
       let cpt = get_counter hid name in
       [Xtmpl.D (string_of_int cpt)]
 ;;
+let () = Stog_plug.register_rule tag_counter fun_counter;;
 
-let fun_block env atts subs =
+let fun_block1 env atts subs =
   match Xtmpl.get_arg atts "href" with
     Some s when s <> "" ->
       begin
@@ -423,7 +429,7 @@ let fun_block env atts subs =
             let long =
               match title_opt, cpt_opt with
                 None, None -> short
-              | None, Some cpt -> Printf.sprintf "%s." short
+              | None, Some cpt -> Printf.sprintf "%s" short
               | Some t, _ -> Printf.sprintf "%s: %s" short t
             in
             (short, long)
@@ -432,6 +438,8 @@ let fun_block env atts subs =
       let env = Xtmpl.env_add_att "id" (string_of_opt id_opt) env in
       let env = Xtmpl.env_add_att "class" (string_of_opt class_opt) env in
       let env = Xtmpl.env_add_att "title" long env in
+      prerr_endline (Printf.sprintf "add title=%S" long);
+      prerr_endline (Xtmpl.string_of_env env);
       match subs with
         [] ->
           let tmpl_file =
@@ -444,11 +452,12 @@ let fun_block env atts subs =
       | _ ->
           Xtmpl.apply_to_xmls env subs
 ;;
+let () = Stog_plug.register_rule tag_block fun_block1;;
 
-let fun_block_stage2 env atts subs =
-  match get_in_args_or_env env atts "href" with
-    "" -> subs
-  | href ->
+let fun_block2 env atts subs =
+  match Xtmpl.get_arg atts "href" with
+    None -> subs
+  | Some href ->
       let stog = Stog_plug.stog () in
       let hid = match Xtmpl.get_arg atts Stog_tags.elt_hid with
           None -> assert false
@@ -459,12 +468,6 @@ let fun_block_stage2 env atts subs =
       let url = Printf.sprintf "%s#%s" (Stog_html.elt_url stog elt) href in
       [Xtmpl.T ("a", ["href", url], [Xtmpl.xml_of_string short])]
 ;;
-
-let () = Stog_plug.register_rule tag_counter fun_counter;;
-let () = Stog_plug.register_rule tag_block fun_block;;
-let () = Stog_plug.register_stage1_fun
-  (fun _ -> Stog_plug.register_rule tag_block fun_block_stage2);;
-
 
 let rec text_of_xml b = function
   Xtmpl.D s -> add_string b s
@@ -545,25 +548,28 @@ let rec gather_existing_ids =
   List.fold_left f
 ;;
 
-let stage2_p stog elt =
+let rules_level2 stog elt_id elt =
   let b =
     try Smap.find elt.Stog_types.elt_type !automatic_ids_by_type
     with Not_found -> !automatic_ids_default
   in
-  let rules = Stog_html.build_rules stog elt in
-  let rules =
-    if b then
-      begin
-        let auto_ids = ref Sset.empty in
-        auto_ids := gather_existing_ids !auto_ids elt.Stog_types.elt_out ;
-        ("p", fun_p "p" auto_ids) :: ("pre", fun_p "pre" auto_ids) :: rules
-      end
-    else
-      rules
-  in
-  let env = Xtmpl.env_of_list rules in
-  let out = Xtmpl.apply_to_xmls env elt.Stog_types.elt_out in
-  { elt with Stog_types.elt_out = out }
+  let rules = Stog_html.build_base_rules stog elt_id elt in
+  let rules = (tag_block, fun_block2) :: rules in
+  if b then
+    begin
+      let auto_ids = ref Sset.empty in
+      (
+       match elt.Stog_types.elt_out with
+         None -> ()
+       | Some xmls -> auto_ids := gather_existing_ids !auto_ids xmls
+      );
+      ("p", fun_p "p" auto_ids) :: ("pre", fun_p "pre" auto_ids) :: rules
+    end
+  else
+    rules
 ;;
 
-let () = Stog_plug.register_stage2_fun stage2_p;;
+let () = Stog_plug.register_level_fun 2 (Stog_html.compute_elt rules_level2);;
+
+
+
