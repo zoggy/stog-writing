@@ -88,7 +88,7 @@ let fun_prepare_notes env args subs =
   [ Xtmpl.T (Xtmpl.tag_env, atts, subs) ]
 ;;
 
-let rules_notes = [ "prepare_notes", fun_prepare_notes ];;
+let rules_notes = [ "prepare-notes", fun_prepare_notes ];;
 
 (** Bibliography *)
 
@@ -438,8 +438,6 @@ let fun_block1 env atts subs =
       let env = Xtmpl.env_add_att "id" (string_of_opt id_opt) env in
       let env = Xtmpl.env_add_att "class" (string_of_opt class_opt) env in
       let env = Xtmpl.env_add_att "title" long env in
-      prerr_endline (Printf.sprintf "add title=%S" long);
-      prerr_endline (Xtmpl.string_of_env env);
       match subs with
         [] ->
           let tmpl_file =
@@ -548,7 +546,10 @@ let rec gather_existing_ids =
   List.fold_left f
 ;;
 
-let rules_level2 stog elt_id elt =
+let rules_level2 stog elt_id elt = rules_notes;;
+
+
+let rules_level4 stog elt_id elt =
   let b =
     try Smap.find elt.Stog_types.elt_type !automatic_ids_by_type
     with Not_found -> !automatic_ids_default
@@ -570,6 +571,7 @@ let rules_level2 stog elt_id elt =
 ;;
 
 let () = Stog_plug.register_level_fun 2 (Stog_html.compute_elt rules_level2);;
+let () = Stog_plug.register_level_fun 4 (Stog_html.compute_elt rules_level4);;
 
 
 
