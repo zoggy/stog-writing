@@ -287,23 +287,9 @@ let xml_of_bib_entry env entry =
    [Xtmpl.xml_of_string (Xtmpl.apply_from_file env tmpl)])
 ;;
 
-let get_in_env env s =
-  let node = "<"^s^"/>" in
-  let s = Xtmpl.apply env node in
-  if s = node then "" else s
-;;
-
-let get_in_args_or_env env args s =
-  match Xtmpl.get_arg args s with
-    None -> get_in_env env s
-  | Some s -> s
-;;
-
-let get_hid env =
-  let s = get_in_env env Stog_tags.elt_hid in
-  assert (s <> "");
-  s
-;;
+let get_in_env = Stog_html.get_in_env;;
+let get_in_args_or_env = Stog_html.get_in_args_or_env;;
+let get_hid = Stog_html.get_hid;;
 
 let fun_bibliography env atts subs =
   let reverse = Xtmpl.opt_arg ~def: "false" atts "reverse" = "true" in
@@ -330,28 +316,6 @@ let () = List.iter
 module Sset = Set.Make
   (struct type t = string let compare = Pervasives.compare end);;
 
-
-let blocks = ref Smap.empty;;
-let add_block s_hid id ~short ~long =
-  let map =
-    try Smap.find s_hid !blocks
-    with Not_found -> Smap.empty
-  in
-  (
-   try
-     ignore (Smap.find id map);
-     warning (Printf.sprintf "Multiple blocks with id %S for hid=%S" id s_hid);
-   with Not_found -> ()
-  );
-  let map = Smap.add id (short, long) map in
-  blocks := Smap.add s_hid map !blocks
-;;
-let block_title s_hid id =
-  try Smap.find id (Smap.find s_hid !blocks)
-  with Not_found ->
-    warning (Printf.sprintf "Unknown block for id=%S and hid=%S" id s_hid);
-    ("???", "???")
-;;
 
 let counters = ref Smap.empty;;
 let bump_counter s_hid name =
@@ -434,7 +398,13 @@ let fun_block1 env atts subs =
             in
             (short, long)
       in
-      (match id_opt with None -> () | Some id -> add_block hid id ~short ~long);
+      (match id_opt with
+         None -> ()
+       | Some id ->
+           let short = Xtmpl.xml_of_string short in
+           let long = Xtmpl.xml_of_string long in
+           Stog_plug.add_block ~hid ~id ~short ~long
+      );
       let env = Xtmpl.env_add_att "id" (string_of_opt id_opt) env in
       let env = Xtmpl.env_add_att "class" (string_of_opt class_opt) env in
       let env = Xtmpl.env_add_att "title" long env in
@@ -456,15 +426,17 @@ let fun_block2 env atts subs =
   match Xtmpl.get_arg atts "href" with
     None -> subs
   | Some href ->
-      let stog = Stog_plug.stog () in
       let hid = match Xtmpl.get_arg atts Stog_tags.elt_hid with
           None -> assert false
         | Some hid -> hid
       in
-      let (short, _) = block_title hid href in
-      let (_,elt) = Stog_types.elt_by_human_id stog (Stog_types.human_id_of_string hid) in
-      let url = Printf.sprintf "%s#%s" (Stog_html.elt_url stog elt) href in
-      [Xtmpl.T ("a", ["href", url], [Xtmpl.xml_of_string short])]
+      let url = Printf.sprintf "%s#%s" hid href in
+      let quotes =
+        match Xtmpl.get_arg atts "quotes" with
+          None -> "false"
+        | Some s -> s
+      in
+      [Xtmpl.T (Stog_tags.elt, ["href", url ; "quotes", quotes], [])]
 ;;
 
 let rec text_of_xml b = function
