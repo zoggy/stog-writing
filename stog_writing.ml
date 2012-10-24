@@ -313,10 +313,6 @@ let () = List.iter
   handling blocks (like environments in latex).
 *)
 
-module Sset = Set.Make
-  (struct type t = string let compare = Pervasives.compare end);;
-
-
 let counters = ref Smap.empty;;
 let bump_counter s_hid name =
   let map =
@@ -403,7 +399,7 @@ let fun_block1 env atts subs =
        | Some id ->
            let short = Xtmpl.xml_of_string short in
            let long = Xtmpl.xml_of_string long in
-           Stog_plug.add_block ~hid ~id ~short ~long
+           Stog_plug.add_block ~hid ~id ~short ~long ()
       );
       let env = Xtmpl.env_add_att "id" (string_of_opt id_opt) env in
       let env = Xtmpl.env_add_att "class" (string_of_opt class_opt) env in
@@ -447,7 +443,7 @@ let rec text_of_xml b = function
 and text_of_xmls b l = List.iter (text_of_xml b) l;;
 
 let min_size = 12 ;;
-let create_id auto_ids xmls =
+let create_id ~hid title xmls =
   let b = Buffer.create 256 in
   text_of_xmls b xmls;
   let s = Stog_misc.strip_string (Buffer.contents b) in
@@ -458,27 +454,30 @@ let create_id auto_ids xmls =
       (String.make (min_size - (min len min_size)) '_')
   in
   let rec iter id n =
-    if Sset.mem id !auto_ids then
-      if n < len then
-        iter (Printf.sprintf "%s%c" id s.[n]) (n+1)
-      else
-        iter (id^"_") (n+1)
-    else
+    try
+      Stog_plug.add_block ~on_dup: `Fail
+        ~hid ~id ~short: title ~long: title ();
       id
+    with
+      Failure _ ->
+        if n < len then
+          iter (Printf.sprintf "%s%c" id s.[n]) (n+1)
+        else
+          iter (id^"_") (n+1)
   in
-  let id = iter init min_size in
-  auto_ids := Sset.add id !auto_ids;
-  id
+  iter init min_size
 ;;
 
-let fun_p tag auto_ids env atts subs =
+let fun_p hid title tag env atts subs =
   match Xtmpl.get_arg atts "id" with
     Some s ->
       (* id already present, return same node *)
       raise Xtmpl.No_change
   | None ->
       (* create a unique id *)
-      let id = create_id auto_ids subs in
+      let id = create_id ~hid: (Stog_types.string_of_human_id hid)
+        title subs
+      in
       let base_url = Xtmpl.apply env "<site-url/>" in
       let link =
         Xtmpl.T ("a", ["class", "paragraph-url" ; "href", "#"^id],
@@ -487,39 +486,7 @@ let fun_p tag auto_ids env atts subs =
      [Xtmpl.T (tag, ("id", id) :: atts, subs @ [link])]
 ;;
 
-let rec gather_existing_ids =
-  let rec f map = function
-    Xtmpl.D _ -> map
-  | Xtmpl.E (((_,tag),atts),subs) ->
-      let g acc = function
-        (("",s), v) -> (s, v) :: acc
-      | _ -> acc
-      in
-      let atts = List.fold_left g [] atts in
-      f map (Xtmpl.T (tag, atts, subs))
-  | Xtmpl.T (tag, atts, subs) ->
-      let map =
-        match tag with
-          "p" | "pre" ->
-            begin
-              match Xtmpl.get_arg atts "id" with
-                None -> map
-              | Some id ->
-                  try
-                    ignore(Sset.add id map);
-                    failwith (Printf.sprintf "id %S defined twice in the same element." id)
-                  with Not_found ->
-                      Sset.add id map
-            end
-        | _ -> map
-      in
-      List.fold_left f map subs
-  in
-  List.fold_left f
-;;
-
 let rules_level2 stog elt_id elt = rules_notes;;
-
 
 let rules_level4 stog elt_id elt =
   let b =
@@ -530,13 +497,11 @@ let rules_level4 stog elt_id elt =
   let rules = (tag_block, fun_block2) :: rules in
   if b then
     begin
-      let auto_ids = ref Sset.empty in
-      (
-       match elt.Stog_types.elt_out with
-         None -> ()
-       | Some xmls -> auto_ids := gather_existing_ids !auto_ids xmls
-      );
-      ("p", fun_p "p" auto_ids) :: ("pre", fun_p "pre" auto_ids) :: rules
+      let fun_p = fun_p elt.Stog_types.elt_human_id
+         (Xtmpl.xml_of_string elt.Stog_types.elt_title)
+      in
+      ("p", fun_p "p") ::
+      ("pre", fun_p "pre") :: rules
     end
   else
     rules
