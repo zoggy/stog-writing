@@ -56,13 +56,14 @@ let strip_string s =
       |	Some last -> String.sub s first ((last-first)+1)
 (*/c==v=[String.strip_string]=1.0====*)
 
+let line_number = ref 1;;
 let string_buffer = Buffer.create 256 ;;
 }
 
 let lowercase = ['a'-'z']
 let uppercase = ['A'-'Z']
 let digit = ['0'-'9']
-let identchar = lowercase | uppercase | digit | '_' | ':'
+let identchar = lowercase | uppercase | digit | '-' | '_' | ':'
 
 let entry_kind = '@'(lowercase|uppercase)+
 
@@ -72,6 +73,7 @@ rule main = parse
 | '"' { Buffer.reset string_buffer; string lexbuf }
 | '\n'
     {
+      incr line_number;
       let module L = Lexing in
       let pos = lexbuf.L.lex_curr_p in
       lexbuf.L.lex_curr_p <-
@@ -81,7 +83,7 @@ rule main = parse
         };
       main lexbuf
     }
-| ' ' { main lexbuf }
+| ' ' | '\t' { main lexbuf }
 | ',' { COMMA }
 | '='' '*'{' { Buffer.reset string_buffer; braced lexbuf }
 | '=' { EQUAL }
