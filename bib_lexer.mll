@@ -85,7 +85,7 @@ rule main = parse
     }
 | ' ' | '\t' { main lexbuf }
 | ',' { COMMA }
-| '='' '*'{' { Buffer.reset string_buffer; braced lexbuf }
+| '='(' '|'\t')*'{' { Buffer.reset string_buffer; braced lexbuf }
 | '=' { EQUAL }
 | '{' { LBRACE }
 | '}' { RBRACE }
