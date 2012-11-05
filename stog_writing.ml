@@ -78,37 +78,27 @@ let fun_prepare_notes env args subs =
 
 let rules_notes = [ "prepare-notes", fun_prepare_notes ];;
 
-(** Bibliography *)
+(** Bibliographies *)
 
 let bib_entries = ref Smap.empty;;
-let bib_entries_by_hid = ref Smap.empty;;
+let bibs_by_hid = ref Smap.empty;;
 
 let add_bib_entry hid e =
-  let (m, by_hid) =
-    try
-      ignore(Smap.find e.Bibtex.id !bib_entries);
-      warning (Printf.sprintf "duplicate entry %S" e.Bibtex.id);
-      raise Not_found
-    with Not_found ->
-      let m = Smap.add e.Bibtex.id (hid, e) !bib_entries in
-      let by_hid =
-          let s_hid = Stog_types.string_of_human_id hid in
-          let l =
-            try Smap.find s_hid !bib_entries_by_hid
-            with Not_found -> []
-          in
-          Smap.add s_hid (e :: l) !bib_entries_by_hid
-      in
-      (m, by_hid)
-  in
-  bib_entries := m;
-  bib_entries_by_hid := by_hid
+  try
+    ignore(Smap.find e.Bibtex.id !bib_entries);
+    warning (Printf.sprintf "duplicate entry %S" e.Bibtex.id);
+    raise Not_found
+  with Not_found ->
+      bib_entries := Smap.add e.Bibtex.id (hid, e) !bib_entries
 ;;
 
-let add_bib_file page file =
+let bib_entries_of_file ?prefix file =
   verbose (Printf.sprintf "loading bibtex file %S" file);
+  let inch =
+    try open_in file
+    with Sys_error s -> failwith s
+  in
   try
-    let inch = open_in file in
     let lexbuf = Lexing.from_channel inch in
     let entries =
       try Bib_parser.entries Bib_lexer.main lexbuf
@@ -123,33 +113,17 @@ let add_bib_file page file =
           failwith (Printf.sprintf "line %d: %s" !Bib_lexer.line_number (Printexc.to_string e))
     in
     close_in inch;
-    List.iter (add_bib_entry page) entries
+    match prefix with
+      None -> entries
+    | Some prefix ->
+        List.map (fun e -> { e with Bibtex.id = prefix ^ e.Bibtex.id }) entries
   with
     Sys_error s
   | Failure s ->
-      error s
+      close_in inch ;
+      failwith s
 ;;
 
-let init_bib stog =
-  let f_elt elt_id elt =
-    let files =
-      try
-        let l =
-          Stog_misc.split_string
-          (List.assoc "bib-files" elt.Stog_types.elt_vars)
-          [','; ';']
-        in
-        List.map Stog_misc.strip_string l
-      with Not_found ->
-          []
-    in
-    List.iter (add_bib_file elt.Stog_types.elt_human_id) files
-  in
-  Stog_tmap.iter f_elt stog.Stog_types.stog_elts;
-  stog
-;;
-
-let () = Stog_plug.register_stage0_fun init_bib;;
 
 let get_bib_entry_field entry = function
   "id" -> entry.Bibtex.id
@@ -160,6 +134,108 @@ let get_bib_entry_field entry = function
         warning (Printf.sprintf "No field %S for bib entry %S" field entry.Bibtex.id);
         ""
 ;;
+
+let sort_bib_entries sort_fields reverse entries =
+  let comp e1 e2 =
+    let l1 = List.map (get_bib_entry_field e1) sort_fields in
+    let l2 = List.map (get_bib_entry_field e2) sort_fields in
+    if reverse then
+      Pervasives.compare l2 l1
+    else
+      Pervasives.compare l1 l2
+  in
+  List.sort comp entries
+;;
+
+let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt (bib_map, rank) s_files =
+  let sort_fields = Stog_misc.split_string sort [';' ; ',' ] in
+  let sort_fields = List.map Stog_misc.strip_string sort_fields in
+  let files =
+    let l = Stog_misc.split_string s_files [','; ';'] in
+    List.map Stog_misc.strip_string l
+  in
+  let files = List.map
+    (fun file ->
+       if Filename.is_relative file then
+         Filename.concat (Filename.dirname elt.Stog_types.elt_src) file
+       else
+         file
+    ) files
+  in
+  let entries = List.flatten (List.map (fun f -> bib_entries_of_file ?prefix f) files) in
+  let entries = sort_bib_entries sort_fields reverse entries in
+  let (entries, rank) = List.fold_left
+    (fun (acc, rank) e ->
+      let rank = rank + 1 in
+      let e = { e with Bibtex.fields = ("rank", string_of_int rank) :: e.Bibtex.fields } in
+      ((e :: acc), rank)
+    ) ([], rank) entries
+  in
+  let entries = List.rev entries in
+  List.iter (add_bib_entry elt.Stog_types.elt_human_id) entries;
+  try
+    ignore(Smap.find name bib_map);
+    let msg = Printf.sprintf "A bibliography %S is already defined in %S"
+      name (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
+    in
+    failwith msg
+  with Not_found ->
+      (Smap.add name entries bib_map, rank)
+;;
+
+let init_bib stog =
+  let rec f_bib elt ?sort ?reverse ?prefix (bib_map, rank) = function
+  | Xtmpl.E ((("",tag),atts), subs) ->
+      let atts = List.fold_left
+        (fun acc ((ns,s),v) ->
+           match ns with "" -> (s,v) :: acc | _ -> acc) [] atts
+      in
+      f_bib elt ?sort ?reverse ?prefix (bib_map, rank) (Xtmpl.T (tag, atts, subs))
+  | Xtmpl.T ("bibliography", atts, subs) ->
+      let name = Xtmpl.get_arg atts "name" in
+      let sort = match Xtmpl.get_arg atts "sort" with None -> sort | x -> x in
+      let prefix = match Xtmpl.get_arg atts "prefix" with None -> prefix | x -> x in
+      let reverse = match Xtmpl.get_arg atts "reverse" with None -> reverse | x -> x in
+      let reverse = Stog_misc.map_opt Stog_io.bool_of_string reverse in
+      let files =
+        match Xtmpl.get_arg atts "files" with
+          None -> failwith
+            (Printf.sprintf "%s: No 'files' given for bibliography%s"
+             (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
+             (match name with None -> "" | Some s -> Printf.sprintf "%S" s)
+            )
+        | Some s -> s
+      in
+      add_bibliography ?name ?sort ?reverse ?prefix elt (bib_map, rank) files
+  | Xtmpl.D _
+  | Xtmpl.E _
+  | Xtmpl.T _ -> (bib_map, rank)
+   in
+  let f_def elt (bib_map, rank) (name,atts,xmls) =
+    match name with
+      "bib-files" ->
+        add_bibliography elt (bib_map, rank) (Xtmpl.string_of_xmls xmls)
+    | "bibliographies" ->
+        let sort = Xtmpl.get_arg atts "sort" in
+        let prefix = Xtmpl.get_arg atts "prefix" in
+        let reverse = Xtmpl.get_arg atts "reverse" in
+        List.fold_left (f_bib elt ?sort ?reverse ?prefix) (bib_map, rank) xmls
+    | _ -> (bib_map, rank)
+  in
+  let f_elt _elt_id elt =
+    let (bib_map, _) = List.fold_left (f_def elt)
+      (Smap.empty, 0) elt.Stog_types.elt_defs
+    in
+    bibs_by_hid := Smap.add
+      (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
+      bib_map
+      !bibs_by_hid
+  in
+  Stog_tmap.iter f_elt stog.Stog_types.stog_elts;
+  stog
+;;
+
+let () = Stog_plug.register_stage0_fun init_bib;;
 
 let fun_bib_field e env atts _ =
   match Xtmpl.get_arg atts "name" with
@@ -239,7 +315,7 @@ let fun_cite env atts subs =
                 | None ->
                     let node = "<cite-format/>" in
                     let s = Xtmpl.apply env node in
-                    let s = if s = node then "[<bib-field name=\"id\"/>]" else s in
+                    let s = if s = node then "[<bib-field name=\"rank\"/>]" else s in
                     [ Xtmpl.xml_of_string s ]
               end
           | _ -> subs
@@ -250,23 +326,6 @@ let fun_cite env atts subs =
         Not_found ->
           error (Printf.sprintf "Unknown bib entry %S" href);
           subs
-;;
-
-let get_sorted_entries ~reverse sort_fields s_hid =
-  let entries =
-    try Smap.find s_hid !bib_entries_by_hid
-    with
-      Not_found -> []
-  in
-  let comp e1 e2 =
-    let l1 = List.map (get_bib_entry_field e1) sort_fields in
-    let l2 = List.map (get_bib_entry_field e2) sort_fields in
-    if reverse then
-      Pervasives.compare l2 l1
-    else
-      Pervasives.compare l1 l2
-  in
-  List.sort comp entries
 ;;
 
 let xml_of_bib_entry env entry =
@@ -282,11 +341,17 @@ let get_in_args_or_env = Stog_html.get_in_args_or_env;;
 let get_hid = Stog_html.get_hid;;
 
 let fun_bibliography env atts subs =
-  let reverse = Xtmpl.opt_arg ~def: "false" atts "reverse" = "true" in
-  let sorting_fields = Xtmpl.opt_arg ~def: "id" atts "sort" in
-  let sorting_fields = Stog_misc.split_string sorting_fields [ ',' ; ';' ] in
   let hid = get_hid env in
-  let entries = get_sorted_entries ~reverse sorting_fields hid in
+  let name = Xtmpl.opt_arg ~def: "default" atts "name" in
+  let entries =
+    try
+      let bib_map = Smap.find hid !bibs_by_hid in
+      try Smap.find name bib_map
+      with Not_found ->
+          failwith (Printf.sprintf "Unknown bibliography %S in %S" name hid)
+    with Not_found ->
+        failwith (Printf.sprintf "No bibliographies for %S" hid)
+  in
   List.map (xml_of_bib_entry env) entries
 ;;
 
