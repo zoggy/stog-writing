@@ -424,7 +424,7 @@ let fun_p hid title tag env atts subs =
         Xtmpl.T ("a", ["class", "paragraph-url" ; "href", "#"^id],
             [Xtmpl.T ("img", ["src", base_url^"/paragraph-url.png"], [])])
      in
-     [Xtmpl.T (tag, ("id", id) :: atts, subs @ [link])]
+     [Xtmpl.T (tag, ("id", id) :: atts, link :: subs)]
 ;;
 
 let rules_level2 stog elt_id elt = rules_notes;;
