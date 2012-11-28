@@ -38,7 +38,7 @@ included in a
 
 node.
 
-At last, all footnotes are inserted when a <notes/> node is encountered.
+At last, all footnotes are inserted when a `<notes/>` node is encountered.
 Numbering is automatic.
 
 Example:
