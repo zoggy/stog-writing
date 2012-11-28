@@ -1,6 +1,7 @@
 This is a plugin for [Stog](http://zoggy.github.com/stog/).
 
 It allows to use the following elements in pages and posts:
+
 - footnotes
 - bibliography
 
