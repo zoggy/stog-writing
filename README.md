@@ -53,11 +53,40 @@ Example:
 
 ## Bibliography
 
-To define the bibliograpy, you must add one or more elements with a "bib-files" field.
+### Defining bibliographies
 
-    bib-files="file1.bib,file2.bib,..."
+Bibliographies can be defined in any element header, with the following syntax:
 
-`bib-files` indicates the files to read entries from, in bibtex format.
+    <bibliographies ...>
+      <bibliography .../>
+      <bibliography .../>
+      ...
+    </bibliographies>
+
+The `<bibliographies>` node can have the following attributes:
+
+- `sort="..."` : the items in each bibliography will be sorted by default according,
+              to the list of fields,
+- `reverse="true"` : the items in each bibliography will be sorted in reverse order,
+- `prefix="..."` : a default string to use as prefix for ids of entries read
+                from bibtex files,
+
+Each `<bibliography>` node can have the following attributes:
+
+- `name="..."` : the name of the bibliography, for further reference; default name is "default";
+              each bibliography must have a site-wide unique name,
+- `files="..."` : a comma-separated list of filenames, in bibtex format;
+               filenames are relative to the element source file,
+- `sort`, `reverse` and `prefix` : can be used to override the same attributes of the
+              `<bibliographies>` node.
+
+Using attribute `bib-files="file1.bib,file2.bib,..."` in an element header is a shortcut for
+
+    <bibliographies>
+      <bibliography files="file1.bib,file2.bib,..."/>
+    </bibliographies>
+
+### Using bibliographies
 
 In your pages and posts, you can use this syntax to cite an entry:
 
@@ -84,20 +113,18 @@ of the entry as text for the reference link.
 
 The default format is
 
-    [<bib-entry-id/>]
+    [<bib-entry-rank/>]
 
-To include the complete list of entries, use the following syntax
-in the element having the "bib-files" field:
+The rank is the position of the item in its bibliography.
+
+To include the complete list of entries of a bibliography, use the following node:
 
     <bibliography/>
 
-The `sort` attribute can be used to indicate which fields must be used
-to sort the entries. Default is to sort on the `id` field. The `reverse`
-field can be set to `true` to reverse the order of the sort. Example:
+The attribute `name="..."` can be used to specify the name of the bibliography to
+insert. Default name is "default".
 
-    <bibliography reverse="true" sort="year"/>
-
-The bibliography command will output each bibliography entry
-using the `bib_entry.tmpl` template. You can use the `bib_entry.tmpl`
-file included as an example. You will have to place it in your stog
+The `<bibliography>` node will rewritten into the list of its entries,
+each entry being inserted using the `bib_entry.tmpl` template. You can use
+the `bib_entry.tmpl` file included as an example. You will have to place it in your stog
 template directory.
