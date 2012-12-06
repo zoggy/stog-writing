@@ -1,13 +1,11 @@
 (** *)
 
-let info = "Writing";;
-let verbose = Stog_plug.verbose ~info;;
-let warning = Stog_plug.warning ~info;;
-let error = Stog_plug.error ~info;;
+let plugin_name = "writing";;
+let verbose = Stog_plug.verbose ~info: plugin_name;;
+let warning = Stog_plug.warning ~info: plugin_name;;
+let error = Stog_plug.error ~info: plugin_name;;
 
-let rc_file stog =
-  Filename.concat (Stog_config.config_dir stog.Stog_types.stog_dir) "config-writing"
-;;
+let rc_file stog = Stog_plug.plugin_config_file stog plugin_name;;
 
 module Smap = Stog_types.Str_map;;
 
@@ -43,40 +41,38 @@ let fun_prepare_notes env args subs =
   let notes = ref [] in
   let rec iter = function
   | Xtmpl.D _ as x -> x
-  | Xtmpl.T (tag, atts, subs) ->
-    iter (Xtmpl.E ((("",tag), List.map (fun (a, v) -> (("",a), v)) atts), subs))
-  | Xtmpl.E (tag, subs) ->
+  | Xtmpl.E (tag, atts, subs) ->
       match tag with
-      | (("", "note"), atts) ->
+      | ("", "note") ->
           incr count ;
           notes := (!count, subs) :: !notes ;
           let target = note_target_id !count in
           let source = note_source_id !count in
-          Xtmpl.T ("sup", ["id", source], [
-            Xtmpl.T ("a", ["href", "#"^target],
+          Xtmpl.E (("","sup"), [("", "id"), source], [
+            Xtmpl.E (("", "a"), [("", "href"), "#"^target],
              [  Xtmpl.D (string_of_int !count)])
            ])
       | _ ->
-          Xtmpl.E (tag, List.map iter subs)
+          Xtmpl.E (tag, atts, List.map iter subs)
   in
   let subs = List.map iter subs in
   let xml_of_note (n, xml) =
     let source = note_source_id n in
     let target = note_target_id n in
-    Xtmpl.T ("div", [ "class", "note" ; "id", target ],
-     (Xtmpl.T ("sup", [], [Xtmpl.T ("a", ["href", "#"^source], [Xtmpl.D (string_of_int n)])]) ::
+    Xtmpl.E (("", "div"), [ ("", "class"), "note" ; ("", "id"), target ],
+     (Xtmpl.E (("", "sup"), [], [Xtmpl.E (("", "a"), [("", "href"), "#"^source], [Xtmpl.D (string_of_int n)])]) ::
       Xtmpl.D " " ::
       xml
      ))
   in
   let xml =
-    Xtmpl.T ("div", ["class","notes"], List.rev_map xml_of_note !notes)
+    Xtmpl.E (("", "div"), [("", "class"),"notes"], List.rev_map xml_of_note !notes)
   in
-  let atts = [ "notes", Xtmpl.string_of_xml xml ] in
-  [ Xtmpl.T (Xtmpl.tag_env, atts, subs) ]
+  let atts = [ ("", "notes"), Xtmpl.string_of_xml xml ] in
+  [ Xtmpl.E (("", Xtmpl.tag_env), atts, subs) ]
 ;;
 
-let rules_notes = [ "prepare-notes", fun_prepare_notes ];;
+let rules_notes = [ ("", "prepare-notes"), fun_prepare_notes ];;
 
 (** Bibliographies *)
 
@@ -185,20 +181,14 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt
 
 let init_bib stog =
   let rec f_bib elt ?sort ?reverse ?prefix (bib_map, rank) = function
-  | Xtmpl.E ((("",tag),atts), subs) ->
-      let atts = List.fold_left
-        (fun acc ((ns,s),v) ->
-           match ns with "" -> (s,v) :: acc | _ -> acc) [] atts
-      in
-      f_bib elt ?sort ?reverse ?prefix (bib_map, rank) (Xtmpl.T (tag, atts, subs))
-  | Xtmpl.T ("bibliography", atts, subs) ->
-      let name = Xtmpl.get_arg atts "name" in
-      let sort = match Xtmpl.get_arg atts "sort" with None -> sort | x -> x in
-      let prefix = match Xtmpl.get_arg atts "prefix" with None -> prefix | x -> x in
-      let reverse = match Xtmpl.get_arg atts "reverse" with None -> reverse | x -> x in
+  | Xtmpl.E (("", "bibliography"), atts, subs) ->
+      let name = Xtmpl.get_arg atts ("", "name") in
+      let sort = match Xtmpl.get_arg atts ("", "sort") with None -> sort | x -> x in
+      let prefix = match Xtmpl.get_arg atts ("", "prefix") with None -> prefix | x -> x in
+      let reverse = match Xtmpl.get_arg atts ("", "reverse") with None -> reverse | x -> x in
       let reverse = Stog_misc.map_opt Stog_io.bool_of_string reverse in
       let files =
-        match Xtmpl.get_arg atts "files" with
+        match Xtmpl.get_arg atts ("", "files") with
           None -> failwith
             (Printf.sprintf "%s: No 'files' given for bibliography%s"
              (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
@@ -208,17 +198,16 @@ let init_bib stog =
       in
       add_bibliography ?name ?sort ?reverse ?prefix elt (bib_map, rank) files
   | Xtmpl.D _
-  | Xtmpl.E _
-  | Xtmpl.T _ -> (bib_map, rank)
+  | Xtmpl.E _ -> (bib_map, rank)
    in
-  let f_def elt (bib_map, rank) (name,atts,xmls) =
-    match name with
-      "bib-files" ->
+  let f_def elt (bib_map, rank) ((prefix, name), atts, xmls) =
+    match prefix, name with
+      "", "bib-files" ->
         add_bibliography elt (bib_map, rank) (Xtmpl.string_of_xmls xmls)
-    | "bibliographies" ->
-        let sort = Xtmpl.get_arg atts "sort" in
-        let prefix = Xtmpl.get_arg atts "prefix" in
-        let reverse = Xtmpl.get_arg atts "reverse" in
+    | "", "bibliographies" ->
+        let sort = Xtmpl.get_arg atts ("", "sort") in
+        let prefix = Xtmpl.get_arg atts ("", "prefix") in
+        let reverse = Xtmpl.get_arg atts ("", "reverse") in
         List.fold_left (f_bib elt ?sort ?reverse ?prefix) (bib_map, rank) xmls
     | _ -> (bib_map, rank)
   in
@@ -238,7 +227,7 @@ let init_bib stog =
 let () = Stog_plug.register_stage0_fun init_bib;;
 
 let fun_bib_field e env atts _ =
-  match Xtmpl.get_arg atts "name" with
+  match Xtmpl.get_arg atts ("", "name") with
     None ->
       warning
         (Printf.sprintf "No \"name\" attribute for bib entry %S" (e.Bibtex.id));
@@ -294,11 +283,11 @@ let mk_bib_entry_link hid e subs =
     (Stog_html.elt_url stog elt)
     (mk_bib_entry_anchor e)
   in
-  Xtmpl.T ("a", ["href", href], subs)
+  Xtmpl.E (("", "a"), [("", "href"), href], subs)
 ;;
 
 let fun_cite env atts subs =
-  match Xtmpl.get_arg atts "href" with
+  match Xtmpl.get_arg atts ("", "href") with
     None ->
       error "Missing href in <cite>";
       subs
@@ -310,7 +299,7 @@ let fun_cite env atts subs =
           match subs with
             [] ->
               begin
-                match Xtmpl.get_arg atts "format" with
+                match Xtmpl.get_arg atts ("", "format") with
                   Some format -> [xml_of_format format]
                 | None ->
                     let node = "<cite-format/>" in
@@ -332,7 +321,7 @@ let xml_of_bib_entry env entry =
   let stog = Stog_plug.stog () in
   let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib_entry.tmpl" in
   let env = add_bib_entry_env env entry in
-  Xtmpl.T ("div", ["class", "bib-entry" ; "id", mk_bib_entry_anchor entry ],
+  Xtmpl.E (("", "div"), [("", "class"), "bib-entry" ; ("", "id"), mk_bib_entry_anchor entry ],
    [Xtmpl.xml_of_string (Xtmpl.apply_from_file env tmpl)])
 ;;
 
@@ -342,7 +331,7 @@ let get_hid = Stog_html.get_hid;;
 
 let fun_bibliography env atts subs =
   let hid = get_hid env in
-  let name = Xtmpl.opt_arg ~def: "default" atts "name" in
+  let name = Xtmpl.opt_arg ~def: "default" atts ("", "name") in
   let entries =
     try
       let bib_map = Smap.find hid !bibs_by_hid in
@@ -356,8 +345,8 @@ let fun_bibliography env atts subs =
 ;;
 
 let rules_bib = [
-    "bibliography", fun_bibliography ;
-    "cite", fun_cite ;
+    ("", "bibliography"), fun_bibliography ;
+    ("", "cite"), fun_cite ;
   ];;
 
 let () = List.iter
@@ -378,8 +367,7 @@ let add_string b s =
 
 let rec text_of_xml b = function
   Xtmpl.D s -> add_string b s
-| Xtmpl.E (_,subs)
-| Xtmpl.T (_, _, subs) ->
+| Xtmpl.E (_, _, subs) ->
     text_of_xmls b subs
 and text_of_xmls b l = List.iter (text_of_xml b) l;;
 
@@ -410,7 +398,7 @@ let create_id ~hid title xmls =
 ;;
 
 let fun_p hid title tag env atts subs =
-  match Xtmpl.get_arg atts "id" with
+  match Xtmpl.get_arg atts ("", "id") with
     Some s ->
       (* id already present, return same node *)
       raise Xtmpl.No_change
@@ -421,10 +409,10 @@ let fun_p hid title tag env atts subs =
       in
       let base_url = Xtmpl.apply env "<site-url/>" in
       let link =
-        Xtmpl.T ("a", ["class", "paragraph-url" ; "href", "#"^id],
-            [Xtmpl.T ("img", ["src", base_url^"/paragraph-url.png"], [])])
+        Xtmpl.E (("", "a"), [("", "class"), "paragraph-url" ; ("", "href"), "#"^id],
+            [Xtmpl.E (("", "img"), [("", "src"), base_url^"/paragraph-url.png"], [])])
      in
-     [Xtmpl.T (tag, ("id", id) :: atts, link :: subs)]
+     [Xtmpl.E (("", tag), (("", "id"), id) :: atts, link :: subs)]
 ;;
 
 let rules_level2 stog elt_id elt = rules_notes;;
@@ -440,8 +428,8 @@ let rules_level4 stog elt_id elt =
       let fun_p = fun_p elt.Stog_types.elt_human_id
          (Xtmpl.xml_of_string elt.Stog_types.elt_title)
       in
-      ("p", fun_p "p") ::
-      ("pre", fun_p "pre") :: rules
+      (("", "p"), fun_p "p") ::
+      (("", "pre"), fun_p "pre") :: rules
     end
   else
     rules
