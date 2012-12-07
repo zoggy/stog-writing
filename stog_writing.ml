@@ -302,10 +302,14 @@ let fun_cite env atts subs =
                 match Xtmpl.get_arg atts ("", "format") with
                   Some format -> [xml_of_format format]
                 | None ->
-                    let node = "<cite-format/>" in
-                    let s = Xtmpl.apply env node in
-                    let s = if s = node then "[<bib-field name=\"rank\"/>]" else s in
-                    [ Xtmpl.xml_of_string s ]
+                    let nodes = [Xtmpl.E (("", "cite-format"), [], [])] in
+                    let nodes2 = Xtmpl.apply_to_xmls env nodes in
+                    let res = if nodes = nodes2 then
+                        [Xtmpl.E (("", "bib-field"), [("","name"), "rank"], [])]
+                      else
+                        nodes2
+                    in
+                    res
               end
           | _ -> subs
         in
@@ -322,7 +326,7 @@ let xml_of_bib_entry env entry =
   let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib_entry.tmpl" in
   let env = add_bib_entry_env env entry in
   Xtmpl.E (("", "div"), [("", "class"), "bib-entry" ; ("", "id"), mk_bib_entry_anchor entry ],
-   [Xtmpl.xml_of_string (Xtmpl.apply_from_file env tmpl)])
+   (Xtmpl.apply_to_file env tmpl))
 ;;
 
 let get_in_env = Stog_html.get_in_env;;
@@ -407,7 +411,13 @@ let fun_p hid title tag env atts subs =
       let id = create_id ~hid: (Stog_types.string_of_human_id hid)
         title subs
       in
-      let base_url = Xtmpl.apply env "<site-url/>" in
+      let base_url = 
+        match Xtmpl.apply_to_string env "<site-url/>" with
+          [Xtmpl.D s] -> s
+        | xml ->
+          let s = Xtmpl.string_of_xmls xml in
+          failwith (Printf.sprintf "<site-url/> does not reduce to PCData but to %S" s)
+      in
       let link =
         Xtmpl.E (("", "a"), [("", "class"), "paragraph-url" ; ("", "href"), "#"^id],
             [Xtmpl.E (("", "img"), [("", "src"), base_url^"/paragraph-url.png"], [])])
