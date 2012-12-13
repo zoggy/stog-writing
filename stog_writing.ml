@@ -233,7 +233,7 @@ let fun_bib_field e env atts _ =
         (Printf.sprintf "No \"name\" attribute for bib entry %S" (e.Bibtex.id));
       []
   | Some name ->
-      [Xtmpl.xml_of_string (get_bib_entry_field e name)]
+      [Xtmpl.D (get_bib_entry_field e name)]
 ;;
 
 let add_bib_entry_env env e =
@@ -411,7 +411,7 @@ let fun_p hid title tag env atts subs =
       let id = create_id ~hid: (Stog_types.string_of_human_id hid)
         title subs
       in
-      let base_url = 
+      let base_url =
         match Xtmpl.apply_to_string env "<site-url/>" with
           [Xtmpl.D s] -> s
         | xml ->
