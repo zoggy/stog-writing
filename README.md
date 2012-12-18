@@ -13,7 +13,7 @@ To install:
     cd stog-writing
     make all install
 
-(you ust have [Menhir](http://cristal.inria.fr/~fpottier/menhir/) installed)
+(you must have [Menhir](http://cristal.inria.fr/~fpottier/menhir/) installed)
 This will install the stog-writing package with ocamlfind.
 
 To use:
