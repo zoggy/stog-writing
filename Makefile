@@ -88,6 +88,7 @@ headers:
 
 noheaders:
 	headache -r -c .headache_config `ls $(HEADFILES)`
+
 # Rules
 .SUFFIXES: .mli .ml .cmi .cmo .cmx .mll .mly
 
