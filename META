@@ -1,4 +1,4 @@
-version = "1.0"
+version = "0.6"
 description = "Stog writing plugin"
 requires = ""
 archive(stog,byte) = "stog_writing.cma"
