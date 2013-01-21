@@ -1,3 +1,6 @@
+
+VERSION=0.6
+
 MKDIR=mkdir -p
 CP=cp -f
 
@@ -45,7 +48,19 @@ clean:
 bib_parser.ml bib_parser.mli: bib_parser.mly
 	$(MENHIR) $<
 
+###########
+archive:
+	git archive --prefix=stog-writing-$(VERSION)/ HEAD | gzip > /tmp/stog-writing-$(VERSION).tar.gz
 
+# headers :
+###########
+HEADFILES= Makefile stog_writing.ml bib_lexer.mll bib_parser.mly bibtex.mli
+headers:
+	echo $(HEADFILES)
+	headache -h header -c .headache_config `ls $(HEADFILES) | grep -v plugin_example`
+
+noheaders:
+	headache -r -c .headache_config `ls $(HEADFILES)`
 # Rules
 .SUFFIXES: .mli .ml .cmi .cmo .cmx .mll .mly
 
