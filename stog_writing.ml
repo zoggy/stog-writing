@@ -448,7 +448,10 @@ let fun_p hid title tag env atts subs =
       in
       let link =
         Xtmpl.E (("", "a"), [("", "class"), "paragraph-url" ; ("", "href"), "#"^id],
-            [Xtmpl.E (("", "img"), [("", "src"), base_url^"/paragraph-url.png"], [])])
+            [Xtmpl.E (("", "img"),
+              [ ("", "src"), base_url^"/paragraph-url.png" ;
+                ("", "alt"), "anchor" ;
+              ], [])])
      in
      [Xtmpl.E (("", tag), (("", "id"), id) :: atts, link :: subs)]
 ;;
