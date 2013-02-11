@@ -46,14 +46,19 @@ LINKFLAGS=$(INCLUDES)
 LINKFLAGS_BYTE=$(INCLUDES)
 
 PLUGIN=stog_writing.cmxs
+PLUGIN_LIB=stog_writing.cmxa
 PLUGIN_BYTE=$(PLUGIN:.cmxs=.cma)
 
 all: byte opt
-opt: $(PLUGIN)
+opt: $(PLUGIN) $(PLUGIN_LIB)
 byte: $(PLUGIN_BYTE)
 
 stog_writing.cmxs: bibtex.cmi bib_parser.cmi bib_parser.cmx bib_lexer.cmx stog_writing.cmx
 	$(OCAMLFIND) ocamlopt -package menhirLib -linkpkg -shared -o $@ \
+	$(LINKFLAGS) `ls $^ | grep -v cmi`
+
+stog_writing.cmxa: bibtex.cmi bib_parser.cmi bib_parser.cmx bib_lexer.cmx stog_writing.cmx
+	$(OCAMLFIND) ocamlopt -a -package menhirLib -linkpkg -o $@ \
 	$(LINKFLAGS) `ls $^ | grep -v cmi`
 
 stog_writing.cma: bibtex.cmi bib_parser.cmi bib_parser.cmo bib_lexer.cmo stog_writing.cmo
@@ -62,7 +67,7 @@ stog_writing.cma: bibtex.cmi bib_parser.cmi bib_parser.cmo bib_lexer.cmo stog_wr
 
 install:
 	$(OCAMLFIND) install stog-writing META \
-	$(PLUGIN) $(PLUGIN_BYTE)
+	$(PLUGIN) $(PLUGIN_BYTE) $(PLUGIN_LIB) $(PLUGIN_LIB:.cmxa=.a)
 
 uninstall:
 	$(OCAMLFIND) remove stog-writing
