@@ -1,9 +1,10 @@
 version = "0.7.0"
 description = "Stog writing plugin"
-requires = ""
+requires = "menhirLib"
 archive(byte) = "stog_writing.cma"
 archive(native) = "stog_writing.cmxa"
 archive(stog,byte) = "stog_writing.cma"
+requires(stog,native) = ""
 archive(stog,native) = "stog_writing.cmxs"
 
 

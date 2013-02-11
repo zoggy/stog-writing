@@ -58,11 +58,11 @@ stog_writing.cmxs: bibtex.cmi bib_parser.cmi bib_parser.cmx bib_lexer.cmx stog_w
 	$(LINKFLAGS) `ls $^ | grep -v cmi`
 
 stog_writing.cmxa: bibtex.cmi bib_parser.cmi bib_parser.cmx bib_lexer.cmx stog_writing.cmx
-	$(OCAMLFIND) ocamlopt -a -package menhirLib -linkpkg -o $@ \
+	$(OCAMLFIND) ocamlopt -a -package menhirLib -o $@ \
 	$(LINKFLAGS) `ls $^ | grep -v cmi`
 
 stog_writing.cma: bibtex.cmi bib_parser.cmi bib_parser.cmo bib_lexer.cmo stog_writing.cmo
-	$(OCAMLFIND) ocamlc -a -package menhirLib -linkpkg -o $@ \
+	$(OCAMLFIND) ocamlc -a -package menhirLib -o $@ \
 	$(LINKFLAGS_BYTE) `ls $^ | grep -v cmi`
 
 install:
