@@ -307,11 +307,12 @@ let mk_bib_entry_anchor e =
 let mk_bib_entry_link hid e subs =
   let stog = Stog_plug.stog () in
   let (_, elt) = Stog_types.elt_by_human_id stog hid in
-  let href = Printf.sprintf "%s#%s"
-    (Stog_html.elt_url stog elt)
-    (mk_bib_entry_anchor e)
+  let href = 
+    Neturl.modify_url 
+      ~fragment: (mk_bib_entry_anchor e)
+      (Stog_html.elt_url stog elt)
   in
-  Xtmpl.E (("", "a"), [("", "href"), href], subs)
+  Xtmpl.E (("", "a"), [("", "href"), Stog_types.string_of_url href], subs)
 ;;
 
 let fun_cite env atts subs =
