@@ -137,6 +137,7 @@ let bib_entries_of_file ?prefix file =
           failwith (Printf.sprintf "line %d: %s" !Bib_lexer.line_number (Printexc.to_string e))
     in
     close_in inch;
+    verbose "done";
     match prefix with
       None -> entries
     | Some prefix ->
@@ -307,8 +308,8 @@ let mk_bib_entry_anchor e =
 let mk_bib_entry_link hid e subs =
   let stog = Stog_plug.stog () in
   let (_, elt) = Stog_types.elt_by_human_id stog hid in
-  let href = 
-    Neturl.modify_url 
+  let href =
+    Neturl.modify_url
       ~fragment: (mk_bib_entry_anchor e)
       (Stog_html.elt_url stog elt)
   in

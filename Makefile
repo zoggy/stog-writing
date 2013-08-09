@@ -54,8 +54,9 @@ opt: $(PLUGIN) $(PLUGIN_LIB)
 byte: $(PLUGIN_BYTE)
 
 stog_writing.cmxs: bibtex.cmi bib_parser.cmi bib_parser.cmx bib_lexer.cmx stog_writing.cmx
-	$(OCAMLFIND) ocamlopt -package menhirLib -linkpkg -shared -o $@ \
+	$(OCAMLFIND) ocamlopt  -shared -o $@ \
 	$(LINKFLAGS) `ls $^ | grep -v cmi`
+	 #-package menhirLib -linkpkg
 
 stog_writing.cmxa: bibtex.cmi bib_parser.cmi bib_parser.cmx bib_lexer.cmx stog_writing.cmx
 	$(OCAMLFIND) ocamlopt -a -package menhirLib -o $@ \
