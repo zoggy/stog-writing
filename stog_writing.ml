@@ -382,10 +382,10 @@ let rules_bib = [
     ("", "bibliography"), fun_bibliography ;
     ("", "cite"), fun_cite ;
   ];;
-
 let () = List.iter
   (fun (name,f) -> Stog_plug.register_rule name f) rules_bib
 ;;
+(*let () = Stog_plug.register_level_fun 70 (Stog_plug.compute_elt rules_bib);;*)
 
 (** Adding references to paragraphs and
   handling blocks (like environments in latex).
