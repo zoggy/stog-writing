@@ -28,19 +28,30 @@
 
 (** *)
 
-let plugin_name = "writing";;
-let verbose = Stog_plug.verbose ~info: plugin_name;;
-let warning = Stog_plug.warning ~info: plugin_name;;
-let error = Stog_plug.error ~info: plugin_name;;
+let module_name = "writing";;
+let verbose = Stog_plug.verbose ~info: module_name;;
+let warning = Stog_plug.warning ~info: module_name;;
+let error = Stog_plug.error ~info: module_name;;
 
-let rc_file stog = Stog_plug.plugin_config_file stog plugin_name;;
+let rc_file stog = Stog_plug.plugin_config_file stog module_name;;
 
 module Smap = Stog_types.Str_map;;
 
-let automatic_ids_default = ref true;;
-let automatic_ids_by_type = ref Smap.empty ;;
+type wdata =
+  { auto_ids_default : bool ;
+    auto_ids_by_type : bool Smap.t ;
+    bib_entries : (Stog_types.human_id * Bibtex.entry) Smap.t ;
+    bibs_by_hid : Bibtex.entry list Smap.t Stog_types.Hid_map.t;
+  }
 
-let load_config stog =
+let empty_data = {
+    auto_ids_default = true ;
+    auto_ids_by_type = Smap.empty ;
+    bib_entries = Smap.empty ;
+    bibs_by_hid = Stog_types.Hid_map.empty;
+  }
+
+let load_config env (stog, data) elts =
   let module CF = Config_file in
   let group = new CF.group in
   let o_ids_def = new CF.bool_cp ~group ["automatic_ids"; "default"] true "" in
@@ -51,20 +62,25 @@ let load_config stog =
   let rc_file = rc_file stog in
   group#read rc_file;
   group#write rc_file;
-  automatic_ids_default := o_ids_def#get ;
-  automatic_ids_by_type :=
-    List.fold_left (fun acc (t, b) -> Smap.add t b acc)
-    !automatic_ids_by_type o_ids_typ#get
+
+  let data =
+    { data with
+      auto_ids_default = o_ids_def#get ;
+      auto_ids_by_type =
+        List.fold_left (fun acc (t, b) -> Smap.add t b acc)
+        data.auto_ids_by_type o_ids_typ#get;
+    }
+  in
+  (stog, data)
 ;;
 
-let () = Stog_plug.register_stage0_fun (fun stog -> load_config stog; stog);;
 
 (** Notes *)
 
 let note_source_id n = Printf.sprintf "source_note_%d" n;;
 let note_target_id n = Printf.sprintf "target_note_%d" n;;
 
-let fun_prepare_notes env args subs =
+let fun_prepare_notes data env args subs =
   let count = ref 0 in
   let notes = ref [] in
   let rec iter = function
@@ -97,23 +113,23 @@ let fun_prepare_notes env args subs =
     Xtmpl.E (("", "div"), [("", "class"),"notes"], List.rev_map xml_of_note !notes)
   in
   let atts = [ ("", "notes"), Xtmpl.string_of_xml xml ] in
-  [ Xtmpl.E (("", Xtmpl.tag_env), atts, subs) ]
+  (data, [ Xtmpl.E (("", Xtmpl.tag_env), atts, subs) ])
 ;;
 
 let rules_notes = [ ("", "prepare-notes"), fun_prepare_notes ];;
+let fun_level_notes = Stog_engine.fun_apply_stog_data_elt_rules (fun _ _ -> rules_notes);;
 
 (** Bibliographies *)
 
-let bib_entries = ref Smap.empty;;
-let bibs_by_hid = ref Smap.empty;;
-
-let add_bib_entry hid e =
+let add_bib_entry data hid e =
   try
-    ignore(Smap.find e.Bibtex.id !bib_entries);
+    ignore(Smap.find e.Bibtex.id data.bib_entries);
     warning (Printf.sprintf "duplicate entry %S" e.Bibtex.id);
     raise Not_found
   with Not_found ->
-      bib_entries := Smap.add e.Bibtex.id (hid, e) !bib_entries
+      { data with
+        bib_entries = Smap.add e.Bibtex.id (hid, e) data.bib_entries ;
+      }
 ;;
 
 let bib_entries_of_file ?prefix file =
@@ -172,7 +188,7 @@ let sort_bib_entries sort_fields reverse entries =
   List.sort comp entries
 ;;
 
-let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt (bib_map, rank) s_files =
+let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt (data, bib_map, rank) s_files =
   let sort_fields = Stog_misc.split_string sort [';' ; ',' ] in
   let sort_fields = List.map Stog_misc.strip_string sort_fields in
   let files =
@@ -197,7 +213,10 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt
     ) ([], rank) entries
   in
   let entries = List.rev entries in
-  List.iter (add_bib_entry elt.Stog_types.elt_human_id) entries;
+  let data = List.fold_left
+    (fun data e -> add_bib_entry data elt.Stog_types.elt_human_id e)
+    data entries
+  in
   try
     ignore(Smap.find name bib_map);
     let msg = Printf.sprintf "A bibliography %S is already defined in %S"
@@ -205,11 +224,11 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt
     in
     failwith msg
   with Not_found ->
-      (Smap.add name entries bib_map, rank)
+      (data, Smap.add name entries bib_map, rank)
 ;;
 
-let init_bib stog =
-  let rec f_bib elt ?sort ?reverse ?prefix (bib_map, rank) = function
+let init_bib env (stog,data) elts =
+  let rec f_bib elt ?sort ?reverse ?prefix (data, bib_map, rank) = function
   | Xtmpl.E (("", "bibliography"), atts, subs) ->
       let name = Xtmpl.get_arg atts ("", "name") in
       let sort = match Xtmpl.get_arg atts ("", "sort") with None -> sort | x -> x in
@@ -225,44 +244,47 @@ let init_bib stog =
             )
         | Some s -> s
       in
-      add_bibliography ?name ?sort ?reverse ?prefix elt (bib_map, rank) files
+      add_bibliography ?name ?sort ?reverse ?prefix elt (data, bib_map, rank) files
   | Xtmpl.D _
-  | Xtmpl.E _ -> (bib_map, rank)
+  | Xtmpl.E _ -> (data, bib_map, rank)
    in
-  let f_def elt (bib_map, rank) ((prefix, name), atts, xmls) =
+  let f_def elt (data, bib_map, rank) ((prefix, name), atts, xmls) =
     match prefix, name with
       "", "bib-files" ->
-        add_bibliography elt (bib_map, rank) (Xtmpl.string_of_xmls xmls)
+        add_bibliography elt (data, bib_map, rank) (Xtmpl.string_of_xmls xmls)
     | "", "bibliographies" ->
         let sort = Xtmpl.get_arg atts ("", "sort") in
         let prefix = Xtmpl.get_arg atts ("", "prefix") in
         let reverse = Xtmpl.get_arg atts ("", "reverse") in
-        List.fold_left (f_bib elt ?sort ?reverse ?prefix) (bib_map, rank) xmls
-    | _ -> (bib_map, rank)
+        List.fold_left (f_bib elt ?sort ?reverse ?prefix) (data, bib_map, rank) xmls
+    | _ -> (data, bib_map, rank)
   in
-  let f_elt _elt_id elt =
-    let (bib_map, _) = List.fold_left (f_def elt)
-      (Smap.empty, 0) elt.Stog_types.elt_defs
+  let f_elt data elt_id =
+    let elt = Stog_types.elt stog elt_id in
+    let (data, bib_map, _) = List.fold_left (f_def elt)
+      (data, Smap.empty, 0) elt.Stog_types.elt_defs
     in
-    bibs_by_hid := Smap.add
-      (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
-      bib_map
-      !bibs_by_hid
+    { data with
+      bibs_by_hid = Stog_types.Hid_map.add
+        elt.Stog_types.elt_human_id
+        bib_map
+        data.bibs_by_hid ;
+    }
   in
-  Stog_tmap.iter f_elt stog.Stog_types.stog_elts;
-  stog
+  let data = List.fold_left f_elt data elts in
+  (stog, data)
 ;;
 
-let () = Stog_plug.register_stage0_fun init_bib;;
+let fun_level_init = Stog_engine.Fun_stog_data init_bib;;
 
-let fun_bib_field e env atts _ =
+let fun_bib_field e data env atts _ =
   match Xtmpl.get_arg atts ("", "name") with
     None ->
       warning
         (Printf.sprintf "No \"name\" attribute for bib entry %S" (e.Bibtex.id));
-      []
+      (data, [])
   | Some name ->
-      [Xtmpl.D (get_bib_entry_field e name)]
+      (data, [Xtmpl.D (get_bib_entry_field e name)])
 ;;
 
 let add_bib_entry_env env e =
@@ -305,86 +327,89 @@ let mk_bib_entry_anchor e =
   Printf.sprintf "bibentry_%s" (escape_bib_entry_id e.Bibtex.id)
 ;;
 
-let mk_bib_entry_link hid e subs =
-  let stog = Stog_plug.stog () in
+let mk_bib_entry_link stog hid e subs =
   let (_, elt) = Stog_types.elt_by_human_id stog hid in
   let href =
     Neturl.modify_url
       ~fragment: (mk_bib_entry_anchor e)
-      (Stog_html.elt_url stog elt)
+      (Stog_engine.elt_url stog elt)
   in
   Xtmpl.E (("", "a"), [("", "href"), Stog_types.string_of_url href], subs)
 ;;
 
-let fun_cite env atts subs =
+let fun_cite (stog, data) env atts subs =
   match Xtmpl.get_arg atts ("", "href") with
     None ->
       error "Missing href in <cite>";
-      subs
+      ((stog, data), subs)
   | Some href ->
       try
-        let (hid, entry) = Smap.find href !bib_entries in
+        let (hid, entry) = Smap.find href data.bib_entries in
         let env = add_bib_entry_env env entry in
-        let xml =
+        let ((stog, data), xml) =
           match subs with
             [] ->
               begin
                 match Xtmpl.get_arg atts ("", "format") with
-                  Some format -> [xml_of_format format]
+                  Some format -> ((stog, data), [xml_of_format format])
                 | None ->
                     let nodes = [Xtmpl.E (("", "cite-format"), [], [])] in
-                    let nodes2 = Xtmpl.apply_to_xmls env nodes in
+                    let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
                     let res = if nodes = nodes2 then
                         [Xtmpl.E (("", "bib-field"), [("","name"), "rank"], [])]
                       else
                         nodes2
                     in
-                    res
+                    ((stog, data), res)
               end
-          | _ -> subs
+          | _ -> ((stog, data), subs)
         in
-        let text = Xtmpl.apply_to_xmls env xml in
-        [mk_bib_entry_link hid entry text]
+        let ((stog, data), text) = Xtmpl.apply_to_xmls (stog, data) env xml in
+        ((stog, data), [mk_bib_entry_link stog hid entry text])
       with
         Not_found ->
           error (Printf.sprintf "Unknown bib entry %S" href);
-          subs
+          ((stog, data), subs)
 ;;
 
-let xml_of_bib_entry env entry =
-  let stog = Stog_plug.stog () in
+let xml_of_bib_entry env ((stog, data), acc) entry =
   let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib_entry.tmpl" in
   let env = add_bib_entry_env env entry in
-  Xtmpl.E (("", "div"), [("", "class"), "bib-entry" ; ("", "id"), mk_bib_entry_anchor entry ],
-   (Xtmpl.apply_to_file env tmpl))
+  let ((stog, data), xmls) = Xtmpl.apply_to_file (stog, data) env tmpl in
+  ((stog, data),
+   Xtmpl.E (("", "div"), [("", "class"), "bib-entry" ; ("", "id"), mk_bib_entry_anchor entry ], xmls) :: acc
+  )
 ;;
 
 let get_in_env = Stog_html.get_in_env;;
 let get_in_args_or_env = Stog_html.get_in_args_or_env;;
 let get_hid = Stog_html.get_hid;;
 
-let fun_bibliography env atts subs =
-  let hid = get_hid env in
+let fun_bibliography (stog, data) env atts subs =
+  let ((stog, data), hid) = get_hid (stog, data) env in
   let name = Xtmpl.opt_arg ~def: "default" atts ("", "name") in
   let entries =
     try
-      let bib_map = Smap.find hid !bibs_by_hid in
+      let bib_map = Stog_types.Hid_map.find
+        (Stog_types.human_id_of_string hid) data.bibs_by_hid
+      in
       try Smap.find name bib_map
       with Not_found ->
           failwith (Printf.sprintf "Unknown bibliography %S in %S" name hid)
     with Not_found ->
         failwith (Printf.sprintf "No bibliographies for %S" hid)
   in
-  List.map (xml_of_bib_entry env) entries
+  List.fold_left (xml_of_bib_entry env) ((stog, data), []) (List.rev entries)
 ;;
 
 let rules_bib = [
     ("", "bibliography"), fun_bibliography ;
     ("", "cite"), fun_cite ;
   ];;
-let () = List.iter
-  (fun (name,f) -> Stog_plug.register_rule name f) rules_bib
-;;
+
+let fun_level_bib = Stog_engine.fun_apply_stog_data_elt_rules
+  (fun _ _ -> rules_bib) ;;
+
 (*let () = Stog_plug.register_level_fun 70 (Stog_plug.compute_elt rules_bib);;*)
 
 (** Adding references to paragraphs and
@@ -478,8 +503,60 @@ let rules_level4 stog elt_id elt =
     rules
 ;;
 
+let level_funs =
+  [
+    "load-config", load_config ;
+    "init", fun_level_init ;
+    "notes", fun_level_notes ;
+    "bib", fun_level_bib ;
+  ]
+;;
+
+let default_levels =
+  List.fold_left
+    (fun map (name, levels) -> Stog_types.Str_map.add name levels map)
+    Stog_types.Str_map.empty
+    [
+      "load-config", [ -2 ] ;
+      "init", [ -1 ] ;
+      "notes", [ 2 ] ;
+      "bib", [ 3 ] ;
+    ]
+
+let make_module ?levels () =
+  let levels = Stog_html.mk_levels module_name level_funs default_levels ?levels () in
+  let module M =
+  struct
+    type data = block_data
+    let engine = {
+        Stog_engine.eng_name = module_name ;
+        eng_levels = levels ;
+        eng_data = empty_data ;
+       }
+
+    type cache_data = {
+        cache_blocks : (Xtmpl.tree * Xtmpl.tree) Str_map.t ;
+      }
+
+    let cache_load data elt t =
+      let hid = Stog_types.string_of_human_id elt.elt_human_id in
+      let blocks = Smap.add hid t.cache_blocks data.blocks in
+      { data with blocks }
+
+    let cache_store data elt =
+      let hid = Stog_types.string_of_human_id elt.elt_human_id in
+      {
+        cache_blocks = (try Smap.find hid data.blocks with Not_found -> Smap.empty) ;
+      }
+  end
+  in
+  (module M : Stog_engine.Stog_engine)
+;;
+
+
 let () = Stog_plug.register_level_fun 2 (Stog_html.compute_elt rules_level2);;
 let () = Stog_plug.register_level_fun 4 (Stog_html.compute_elt rules_level4);;
 
+let () = Stog_plug.register_stage0_fun (fun stog -> load_config stog; stog);;
 
 
