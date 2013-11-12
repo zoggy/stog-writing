@@ -35,6 +35,7 @@ let error = Stog_plug.error ~info: module_name;;
 
 let rc_file stog = Stog_plug.plugin_config_file stog module_name;;
 
+open Stog_types;;
 module Smap = Stog_types.Str_map;;
 
 type wdata =
@@ -431,47 +432,31 @@ let rec text_of_xml b = function
 and text_of_xmls b l = List.iter (text_of_xml b) l;;
 
 let min_size = 12 ;;
-let create_id ~hid title xmls =
+let create_id xmls =
   let b = Buffer.create 256 in
   text_of_xmls b xmls;
   let s = Stog_misc.strip_string (Buffer.contents b) in
   let len = String.length s in
-  let init =
-    Printf.sprintf "%s%s"
-      (String.sub s 0 (min len min_size))
-      (String.make (min_size - (min len min_size)) '_')
-  in
-  let rec iter id n =
-    try
-      Stog_plug.add_block ~on_dup: `Fail
-        ~hid ~id ~short: title ~long: title ();
-      id
-    with
-      Failure _ ->
-        if n < len then
-          iter (Printf.sprintf "%s%c" id s.[n]) (n+1)
-        else
-          iter (id^"_") (n+1)
-  in
-  iter init min_size
+  Printf.sprintf "%s%s"
+    (String.sub s 0 (min len min_size))
+    (String.make (min_size - (min len min_size)) '_')
 ;;
 
-let fun_p hid title tag env atts subs =
+let fun_p tag data env atts subs =
   match Xtmpl.get_arg atts ("", "id") with
     Some s ->
       (* id already present, return same node *)
       raise Xtmpl.No_change
   | None ->
       (* create a unique id *)
-      let id = create_id ~hid: (Stog_types.string_of_human_id hid)
-        title subs
-      in
+      let id = create_id subs in
+      let (data, xmls) = Xtmpl.apply_to_string data env "<site-url/>" in
       let base_url =
-        match Xtmpl.apply_to_string env "<site-url/>" with
+        match xmls with
           [Xtmpl.D s] -> s
         | xml ->
-          let s = Xtmpl.string_of_xmls xml in
-          failwith (Printf.sprintf "<site-url/> does not reduce to PCData but to %S" s)
+            let s = Xtmpl.string_of_xmls xml in
+            failwith (Printf.sprintf "<site-url/> does not reduce to PCData but to %S" s)
       in
       let link =
         Xtmpl.E (("", "a"), [("", "class"), "paragraph-url" ; ("", "href"), "#"^id],
@@ -480,35 +465,37 @@ let fun_p hid title tag env atts subs =
                 ("", "alt"), "anchor" ;
               ], [])])
      in
-     [Xtmpl.E (("", tag), (("", "id"), id) :: atts, link :: subs)]
+     (data, [Xtmpl.E (("", tag), (("", "id"), id) :: atts, link :: subs)])
 ;;
 
-let rules_level2 stog elt_id elt = rules_notes;;
-
-let rules_level4 stog elt_id elt =
-  let b =
-    try Smap.find elt.Stog_types.elt_type !automatic_ids_by_type
-    with Not_found -> !automatic_ids_default
+let rules_auto_ids stog elt_id =
+  let elt = Stog_types.elt stog elt_id in
+  let f tag (stog, data) env atts subs =
+    let b =
+      try Smap.find elt.Stog_types.elt_type data.auto_ids_by_type
+      with Not_found -> data.auto_ids_default
+    in
+    if b then
+      fun_p tag (stog, data) env atts subs
+    else
+      raise Xtmpl.No_change
   in
-  let rules = Stog_html.build_base_rules stog elt_id elt in
-  if b then
-    begin
-      let fun_p = fun_p elt.Stog_types.elt_human_id
-         (Xtmpl.xml_of_string elt.Stog_types.elt_title)
-      in
-      (("", "p"), fun_p "p") ::
-      (("", "pre"), fun_p "pre") :: rules
-    end
-  else
-    rules
+  [ (("", "p"), f "p") ;
+    (("", "pre"), f "pre") ;
+  ]
+;;
+
+let fun_level_auto_ids =
+  Stog_engine.fun_apply_stog_data_elt_rules rules_auto_ids
 ;;
 
 let level_funs =
   [
-    "load-config", load_config ;
+    "load-config", Stog_engine.Fun_stog_data load_config ;
     "init", fun_level_init ;
     "notes", fun_level_notes ;
     "bib", fun_level_bib ;
+    "auto-ids", fun_level_auto_ids ;
   ]
 ;;
 
@@ -521,42 +508,49 @@ let default_levels =
       "init", [ -1 ] ;
       "notes", [ 2 ] ;
       "bib", [ 3 ] ;
+      "auto-ids", [ 4 ] ;
     ]
 
-let make_module ?levels () =
+let make_engine ?levels () =
   let levels = Stog_html.mk_levels module_name level_funs default_levels ?levels () in
   let module M =
   struct
-    type data = block_data
-    let engine = {
-        Stog_engine.eng_name = module_name ;
-        eng_levels = levels ;
-        eng_data = empty_data ;
+    type data = wdata
+    let modul = {
+        Stog_engine.mod_name = module_name ;
+        mod_levels = levels ;
+        mod_data = empty_data ;
        }
 
     type cache_data = {
-        cache_blocks : (Xtmpl.tree * Xtmpl.tree) Str_map.t ;
+        bibs : Bibtex.entry list Smap.t ;
       }
 
     let cache_load data elt t =
-      let hid = Stog_types.string_of_human_id elt.elt_human_id in
-      let blocks = Smap.add hid t.cache_blocks data.blocks in
-      { data with blocks }
+      let hid = elt.elt_human_id in
+      let bibs_by_hid = Stog_types.Hid_map.add hid t.bibs data.bibs_by_hid in
+      let data = { data with bibs_by_hid } in
+      Smap.fold
+        (fun _ entries data -> List.fold_left
+           (fun data e -> add_bib_entry data hid e) data entries)
+        t.bibs data
 
     let cache_store data elt =
-      let hid = Stog_types.string_of_human_id elt.elt_human_id in
+      let hid = elt.elt_human_id in
       {
-        cache_blocks = (try Smap.find hid data.blocks with Not_found -> Smap.empty) ;
+        bibs = (try Stog_types.Hid_map.find hid data.bibs_by_hid with Not_found -> Smap.empty) ;
       }
   end
   in
-  (module M : Stog_engine.Stog_engine)
+  (module M : Stog_engine.Module)
 ;;
 
+let f stog =
+  let levels =
+    try Some (Stog_types.Str_map.find module_name stog.Stog_types.stog_levels)
+    with Not_found -> None
+  in
+  make_engine ?levels ()
+;;
 
-let () = Stog_plug.register_level_fun 2 (Stog_html.compute_elt rules_level2);;
-let () = Stog_plug.register_level_fun 4 (Stog_html.compute_elt rules_level4);;
-
-let () = Stog_plug.register_stage0_fun (fun stog -> load_config stog; stog);;
-
-
+let () = Stog_engine.register_module module_name f;;
