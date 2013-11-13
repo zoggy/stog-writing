@@ -431,15 +431,13 @@ let rec text_of_xml b = function
     text_of_xmls b subs
 and text_of_xmls b l = List.iter (text_of_xml b) l;;
 
-let min_size = 12 ;;
+let max_size = 24 ;;
 let create_id xmls =
   let b = Buffer.create 256 in
   text_of_xmls b xmls;
   let s = Stog_misc.strip_string (Buffer.contents b) in
   let len = String.length s in
-  Printf.sprintf "%s%s"
-    (String.sub s 0 (min len min_size))
-    (String.make (min_size - (min len min_size)) '_')
+  String.sub s 0 (min len max_size)
 ;;
 
 let fun_p tag data env atts subs =
