@@ -43,6 +43,7 @@ type wdata =
     auto_ids_by_type : bool Smap.t ;
     bib_entries : (Stog_types.human_id * Bibtex.entry) Smap.t ;
     bibs_by_hid : Bibtex.entry list Smap.t Stog_types.Hid_map.t;
+    generated_by_elt : Stog_types.Str_set.t Stog_types.Hid_map.t ;
   }
 
 let empty_data = {
@@ -50,6 +51,7 @@ let empty_data = {
     auto_ids_by_type = Smap.empty ;
     bib_entries = Smap.empty ;
     bibs_by_hid = Stog_types.Hid_map.empty;
+    generated_by_elt = Stog_types.Hid_map.empty ;
   }
 
 let load_config env (stog, data) elts =
@@ -440,15 +442,26 @@ let create_id xmls =
   String.sub s 0 (min len max_size)
 ;;
 
-let fun_p tag data env atts subs =
-  match Xtmpl.get_arg atts ("", "id") with
-    Some s ->
-      (* id already present, return same node *)
+let fun_p tag elt (stog, data) env atts subs =
+  let (id, atts) =
+    match Xtmpl.get_arg atts ("", "id") with
+      Some s -> (s, atts)
+    | None ->
+        (* create a hopefully unique id *)
+        let id = create_id subs in
+        (id, (("", "id"), id) :: atts)
+  in
+  let set =
+    try Stog_types.Hid_map.find
+      elt.elt_human_id data.generated_by_elt
+    with Not_found -> Stog_types.Str_set.empty
+  in
+  match Stog_types.Str_set.mem id set with
+    true ->
+      (* link code already generated, return same node *)
       raise Xtmpl.No_change
-  | None ->
-      (* create a unique id *)
-      let id = create_id subs in
-      let (data, xmls) = Xtmpl.apply_to_string data env "<site-url/>" in
+  | false ->
+      let ((stog,data), xmls) = Xtmpl.apply_to_string (stog,data) env "<site-url/>" in
       let base_url =
         match xmls with
           [Xtmpl.D s] -> s
@@ -462,8 +475,13 @@ let fun_p tag data env atts subs =
               [ ("", "src"), base_url^"/paragraph-url.png" ;
                 ("", "alt"), "anchor" ;
               ], [])])
-     in
-     (data, [Xtmpl.E (("", tag), (("", "id"), id) :: atts, link :: subs)])
+      in
+      let set = Stog_types.Str_set.add id set in
+      let generated_by_elt = Stog_types.Hid_map.add
+        elt.elt_human_id set data.generated_by_elt
+      in
+      let data = { data with generated_by_elt } in
+      ((stog, data), [Xtmpl.E (("", tag), atts, link :: subs)])
 ;;
 
 let rules_auto_ids stog elt_id =
@@ -474,7 +492,7 @@ let rules_auto_ids stog elt_id =
       with Not_found -> data.auto_ids_default
     in
     if b then
-      fun_p tag (stog, data) env atts subs
+      fun_p tag elt (stog, data) env atts subs
     else
       raise Xtmpl.No_change
   in
