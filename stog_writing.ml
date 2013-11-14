@@ -524,7 +524,7 @@ let make_engine ?levels () =
         bibs : Bibtex.entry list Smap.t ;
       }
 
-    let cache_load data elt t =
+    let cache_load _stog data elt t =
       let hid = elt.elt_human_id in
       let bibs_by_hid = Stog_types.Hid_map.add hid t.bibs data.bibs_by_hid in
       let data = { data with bibs_by_hid } in
@@ -533,7 +533,7 @@ let make_engine ?levels () =
            (fun data e -> add_bib_entry data hid e) data entries)
         t.bibs data
 
-    let cache_store data elt =
+    let cache_store _stog data elt =
       let hid = elt.elt_human_id in
       {
         bibs = (try Stog_types.Hid_map.find hid data.bibs_by_hid with Not_found -> Smap.empty) ;
