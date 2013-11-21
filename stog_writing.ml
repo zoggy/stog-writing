@@ -95,8 +95,8 @@ let fun_prepare_notes data env args subs =
           notes := (!count, subs) :: !notes ;
           let target = note_target_id !count in
           let source = note_source_id !count in
-          Xtmpl.E (("","sup"), [("", "id"), source], [
-            Xtmpl.E (("", "a"), [("", "href"), "#"^target],
+          Xtmpl.E (("","sup"), [("", "id"), [Xtmpl.D source]], [
+            Xtmpl.E (("", "a"), [("", "href"), [Xtmpl.D ("#"^target)]],
              [  Xtmpl.D (string_of_int !count)])
            ])
       | _ ->
@@ -106,16 +106,18 @@ let fun_prepare_notes data env args subs =
   let xml_of_note (n, xml) =
     let source = note_source_id n in
     let target = note_target_id n in
-    Xtmpl.E (("", "div"), [ ("", "class"), "note" ; ("", "id"), target ],
-     (Xtmpl.E (("", "sup"), [], [Xtmpl.E (("", "a"), [("", "href"), "#"^source], [Xtmpl.D (string_of_int n)])]) ::
+    Xtmpl.E (("", "div"),
+     [ ("", "class"), [Xtmpl.D "note"] ; ("", "id"), [Xtmpl.D target] ],
+     (Xtmpl.E (("", "sup"), [], 
+       [Xtmpl.E (("", "a"), [("", "href"), [Xtmpl.D ("#"^source)]], [Xtmpl.D (string_of_int n)])]) ::
       Xtmpl.D " " ::
-      xml
+        xml
      ))
   in
   let xml =
-    Xtmpl.E (("", "div"), [("", "class"),"notes"], List.rev_map xml_of_note !notes)
+    Xtmpl.E (("", "div"), [("", "class"), [Xtmpl.D "notes"]], List.rev_map xml_of_note !notes)
   in
-  let atts = [ ("", "notes"), Xtmpl.string_of_xml xml ] in
+  let atts = [ ("", "notes"), [ xml ] ] in
   (data, [ Xtmpl.E (("", Xtmpl.tag_env), atts, subs) ])
 ;;
 
@@ -233,13 +235,13 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt
 let init_bib env (stog,data) elts =
   let rec f_bib elt ?sort ?reverse ?prefix (data, bib_map, rank) = function
   | Xtmpl.E (("", "bibliography"), atts, subs) ->
-      let name = Xtmpl.get_arg atts ("", "name") in
-      let sort = match Xtmpl.get_arg atts ("", "sort") with None -> sort | x -> x in
-      let prefix = match Xtmpl.get_arg atts ("", "prefix") with None -> prefix | x -> x in
-      let reverse = match Xtmpl.get_arg atts ("", "reverse") with None -> reverse | x -> x in
+      let name = Xtmpl.get_arg_cdata atts ("", "name") in
+      let sort = match Xtmpl.get_arg_cdata atts ("", "sort") with None -> sort | x -> x in
+      let prefix = match Xtmpl.get_arg_cdata atts ("", "prefix") with None -> prefix | x -> x in
+      let reverse = match Xtmpl.get_arg_cdata atts ("", "reverse") with None -> reverse | x -> x in
       let reverse = Stog_misc.map_opt Stog_io.bool_of_string reverse in
       let files =
-        match Xtmpl.get_arg atts ("", "files") with
+        match Xtmpl.get_arg_cdata atts ("", "files") with
           None -> failwith
             (Printf.sprintf "%s: No 'files' given for bibliography%s"
              (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
@@ -256,9 +258,9 @@ let init_bib env (stog,data) elts =
       "", "bib-files" ->
         add_bibliography elt (data, bib_map, rank) (Xtmpl.string_of_xmls xmls)
     | "", "bibliographies" ->
-        let sort = Xtmpl.get_arg atts ("", "sort") in
-        let prefix = Xtmpl.get_arg atts ("", "prefix") in
-        let reverse = Xtmpl.get_arg atts ("", "reverse") in
+        let sort = Xtmpl.get_arg_cdata atts ("", "sort") in
+        let prefix = Xtmpl.get_arg_cdata atts ("", "prefix") in
+        let reverse = Xtmpl.get_arg_cdata atts ("", "reverse") in
         List.fold_left (f_bib elt ?sort ?reverse ?prefix) (data, bib_map, rank) xmls
     | _ -> (data, bib_map, rank)
   in
@@ -281,7 +283,7 @@ let init_bib env (stog,data) elts =
 let fun_level_init = Stog_engine.Fun_stog_data init_bib;;
 
 let fun_bib_field e data env atts _ =
-  match Xtmpl.get_arg atts ("", "name") with
+  match Xtmpl.get_arg_cdata atts ("", "name") with
     None ->
       warning
         (Printf.sprintf "No \"name\" attribute for bib entry %S" (e.Bibtex.id));
@@ -292,16 +294,16 @@ let fun_bib_field e data env atts _ =
 
 let add_bib_entry_env env e =
   let env = List.fold_left
-     (fun env (fd, v) ->
+    (fun env (fd, v) ->
        Xtmpl.env_add_att
-       (Printf.sprintf "bib-entry-%s" fd) v env
+         (Printf.sprintf "bib-entry-%s" fd) [Xtmpl.D v] env
     )
-     env
-     e.Bibtex.fields
+      env
+      e.Bibtex.fields
   in
   let env = Xtmpl.env_add "bib-field" (fun_bib_field e) env in
-  let env = Xtmpl.env_add_att "bib-entry-id" e.Bibtex.id env in
-  let env = Xtmpl.env_add_att "bib-entry-kind" e.Bibtex.kind env in
+  let env = Xtmpl.env_add_att "bib-entry-id" [Xtmpl.D e.Bibtex.id] env in
+  let env = Xtmpl.env_add_att "bib-entry-kind" [Xtmpl.D e.Bibtex.kind] env in
   env
 ;;
 
@@ -337,11 +339,11 @@ let mk_bib_entry_link stog hid e subs =
       ~fragment: (mk_bib_entry_anchor e)
       (Stog_engine.elt_url stog elt)
   in
-  Xtmpl.E (("", "a"), [("", "href"), Stog_types.string_of_url href], subs)
+  Xtmpl.E (("", "a"), [("", "href"), [Xtmpl.D (Stog_types.string_of_url href)]], subs)
 ;;
 
 let fun_cite (stog, data) env atts subs =
-  match Xtmpl.get_arg atts ("", "href") with
+  match Xtmpl.get_arg_cdata atts ("", "href") with
     None ->
       error "Missing href in <cite>";
       ((stog, data), subs)
@@ -354,12 +356,12 @@ let fun_cite (stog, data) env atts subs =
             [] ->
               begin
                 match Xtmpl.get_arg atts ("", "format") with
-                  Some format -> ((stog, data), [xml_of_format format])
+                  Some format -> ((stog, data), format)
                 | None ->
                     let nodes = [Xtmpl.E (("", "cite-format"), [], [])] in
                     let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
                     let res = if nodes = nodes2 then
-                        [Xtmpl.E (("", "bib-field"), [("","name"), "rank"], [])]
+                        [Xtmpl.E (("", "bib-field"), [("","name"), [Xtmpl.D "rank"]], [])]
                       else
                         nodes2
                     in
@@ -380,7 +382,9 @@ let xml_of_bib_entry env ((stog, data), acc) entry =
   let env = add_bib_entry_env env entry in
   let ((stog, data), xmls) = Xtmpl.apply_to_file (stog, data) env tmpl in
   ((stog, data),
-   Xtmpl.E (("", "div"), [("", "class"), "bib-entry" ; ("", "id"), mk_bib_entry_anchor entry ], xmls) :: acc
+   Xtmpl.E (("", "div"),
+    [ ("", "class"), [Xtmpl.D "bib-entry"] ;
+      ("", "id"), [Xtmpl.D (mk_bib_entry_anchor entry)] ], xmls) :: acc
   )
 ;;
 
@@ -390,7 +394,7 @@ let get_hid = Stog_html.get_hid;;
 
 let fun_bibliography (stog, data) env atts subs =
   let ((stog, data), hid) = get_hid (stog, data) env in
-  let name = Xtmpl.opt_arg ~def: "default" atts ("", "name") in
+  let name = Xtmpl.opt_arg_cdata ~def: "default" atts ("", "name") in
   let entries =
     try
       let bib_map = Stog_types.Hid_map.find
@@ -444,12 +448,12 @@ let create_id xmls =
 
 let fun_p tag elt (stog, data) env atts subs =
   let (id, atts) =
-    match Xtmpl.get_arg atts ("", "id") with
+    match Xtmpl.get_arg_cdata atts ("", "id") with
       Some s -> (s, atts)
     | None ->
         (* create a hopefully unique id *)
         let id = create_id subs in
-        (id, (("", "id"), id) :: atts)
+        (id, (("", "id"),  [Xtmpl.D id]) :: atts)
   in
   let set =
     try Stog_types.Hid_map.find
@@ -470,11 +474,12 @@ let fun_p tag elt (stog, data) env atts subs =
             failwith (Printf.sprintf "<site-url/> does not reduce to PCData but to %S" s)
       in
       let link =
-        Xtmpl.E (("", "a"), [("", "class"), "paragraph-url" ; ("", "href"), "#"^id],
-            [Xtmpl.E (("", "img"),
-              [ ("", "src"), base_url^"/paragraph-url.png" ;
-                ("", "alt"), "anchor" ;
-              ], [])])
+        Xtmpl.E (("", "a"),
+         [("", "class"), [Xtmpl.D "paragraph-url"] ; ("", "href"), [Xtmpl.D ("#"^id)] ],
+         [Xtmpl.E (("", "img"),
+            [ ("", "src"), [Xtmpl.D (base_url^"/paragraph-url.png")] ;
+              ("", "alt"), [Xtmpl.D "anchor"] ;
+            ], [])])
       in
       let set = Stog_types.Str_set.add id set in
       let generated_by_elt = Stog_types.Hid_map.add
