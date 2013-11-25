@@ -95,9 +95,10 @@ let fun_prepare_notes data env args subs =
           notes := (!count, subs) :: !notes ;
           let target = note_target_id !count in
           let source = note_source_id !count in
-          Xtmpl.E (("","sup"), [("", "id"), [Xtmpl.D source]], [
-            Xtmpl.E (("", "a"), [("", "href"), [Xtmpl.D ("#"^target)]],
-             [  Xtmpl.D (string_of_int !count)])
+          Xtmpl.E (("","sup"), Xtmpl.atts_one ("", "id") [Xtmpl.D source],
+           [
+             Xtmpl.E (("", "a"), Xtmpl.atts_one ("", "href") [Xtmpl.D ("#"^target)],
+              [  Xtmpl.D (string_of_int !count)])
            ])
       | _ ->
           Xtmpl.E (tag, atts, List.map iter subs)
@@ -107,17 +108,22 @@ let fun_prepare_notes data env args subs =
     let source = note_source_id n in
     let target = note_target_id n in
     Xtmpl.E (("", "div"),
-     [ ("", "class"), [Xtmpl.D "note"] ; ("", "id"), [Xtmpl.D target] ],
-     (Xtmpl.E (("", "sup"), [], 
-       [Xtmpl.E (("", "a"), [("", "href"), [Xtmpl.D ("#"^source)]], [Xtmpl.D (string_of_int n)])]) ::
-      Xtmpl.D " " ::
-        xml
+     Xtmpl.atts_of_list [ ("", "class"), [Xtmpl.D "note"] ; ("", "id"), [Xtmpl.D target] ],
+     (Xtmpl.E (("", "sup"), Xtmpl.atts_empty,
+       [Xtmpl.E (("", "a"),
+          Xtmpl.atts_one ("", "href") [Xtmpl.D ("#"^source)],
+          [Xtmpl.D (string_of_int n)])
+       ]
+      ) ::
+      Xtmpl.D " " :: xml
      ))
   in
   let xml =
-    Xtmpl.E (("", "div"), [("", "class"), [Xtmpl.D "notes"]], List.rev_map xml_of_note !notes)
+    Xtmpl.E (("", "div"),
+     Xtmpl.atts_one ("", "class") [Xtmpl.D "notes"],
+     List.rev_map xml_of_note !notes)
   in
-  let atts = [ ("", "notes"), [ xml ] ] in
+  let atts = Xtmpl.atts_one ("", "notes") [ xml ] in
   (data, [ Xtmpl.E (("", Xtmpl.tag_env), atts, subs) ])
 ;;
 
@@ -339,7 +345,9 @@ let mk_bib_entry_link stog hid e subs =
       ~fragment: (mk_bib_entry_anchor e)
       (Stog_engine.elt_url stog elt)
   in
-  Xtmpl.E (("", "a"), [("", "href"), [Xtmpl.D (Stog_types.string_of_url href)]], subs)
+  Xtmpl.E (("", "a"),
+   Xtmpl.atts_one ("", "href") [Xtmpl.D (Stog_types.string_of_url href)],
+   subs)
 ;;
 
 let fun_cite (stog, data) env atts subs =
@@ -358,10 +366,14 @@ let fun_cite (stog, data) env atts subs =
                 match Xtmpl.get_arg atts ("", "format") with
                   Some format -> ((stog, data), format)
                 | None ->
-                    let nodes = [Xtmpl.E (("", "cite-format"), [], [])] in
+                    let nodes = [Xtmpl.E (("", "cite-format"), Xtmpl.atts_empty, [])] in
                     let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
                     let res = if nodes = nodes2 then
-                        [Xtmpl.E (("", "bib-field"), [("","name"), [Xtmpl.D "rank"]], [])]
+                        [Xtmpl.E (("", "bib-field"),
+                           Xtmpl.atts_one ("","name") [Xtmpl.D "rank"],
+                           []
+                          )
+                        ]
                       else
                         nodes2
                     in
@@ -383,8 +395,11 @@ let xml_of_bib_entry env ((stog, data), acc) entry =
   let ((stog, data), xmls) = Xtmpl.apply_to_file (stog, data) env tmpl in
   ((stog, data),
    Xtmpl.E (("", "div"),
-    [ ("", "class"), [Xtmpl.D "bib-entry"] ;
-      ("", "id"), [Xtmpl.D (mk_bib_entry_anchor entry)] ], xmls) :: acc
+    Xtmpl.atts_of_list
+      [ ("", "class"), [Xtmpl.D "bib-entry"] ;
+        ("", "id"), [Xtmpl.D (mk_bib_entry_anchor entry)]
+      ],
+    xmls) :: acc
   )
 ;;
 
@@ -453,7 +468,7 @@ let fun_p tag elt (stog, data) env atts subs =
     | None ->
         (* create a hopefully unique id *)
         let id = create_id subs in
-        (id, (("", "id"),  [Xtmpl.D id]) :: atts)
+        (id, Xtmpl.atts_one ~atts ("", "id") [Xtmpl.D id])
   in
   let set =
     try Stog_types.Hid_map.find
@@ -475,11 +490,17 @@ let fun_p tag elt (stog, data) env atts subs =
       in
       let link =
         Xtmpl.E (("", "a"),
-         [("", "class"), [Xtmpl.D "paragraph-url"] ; ("", "href"), [Xtmpl.D ("#"^id)] ],
+         Xtmpl.atts_of_list
+           [("", "class"), [Xtmpl.D "paragraph-url"] ;
+             ("", "href"), [Xtmpl.D ("#"^id)]
+           ],
          [Xtmpl.E (("", "img"),
-            [ ("", "src"), [Xtmpl.D (base_url^"/paragraph-url.png")] ;
-              ("", "alt"), [Xtmpl.D "anchor"] ;
-            ], [])])
+            Xtmpl.atts_of_list
+              [ ("", "src"), [Xtmpl.D (base_url^"/paragraph-url.png")] ;
+                ("", "alt"), [Xtmpl.D "anchor"]
+              ],
+            [])
+         ])
       in
       let set = Stog_types.Str_set.add id set in
       let generated_by_elt = Stog_types.Hid_map.add
