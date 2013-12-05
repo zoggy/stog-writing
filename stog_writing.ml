@@ -389,10 +389,15 @@ let fun_cite (stog, data) env atts subs =
           ((stog, data), subs)
 ;;
 
-let xml_of_bib_entry env ((stog, data), acc) entry =
-  let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib_entry.tmpl" in
-  let env = add_bib_entry_env env entry in
-  let ((stog, data), xmls) = Xtmpl.apply_to_file (stog, data) env tmpl in
+let xml_of_bib_entry env elt_id ((stog, data), acc) entry =
+  let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib-entry.tmpl" in
+  let env2 =
+    let base_rules = Stog_html.build_base_rules stog elt_id in
+    let env = Xtmpl.env_of_list base_rules in
+    add_bib_entry_env env entry
+  in
+  let (stog, xmls) = Xtmpl.apply_to_file stog env2 tmpl in
+  let ((stog, data), xmls) = Xtmpl.apply_to_xmls (stog,data) env xmls in
   ((stog, data),
    Xtmpl.E (("", "div"),
     Xtmpl.atts_of_list
@@ -407,7 +412,7 @@ let get_in_env = Stog_html.get_in_env;;
 let get_in_args_or_env = Stog_html.get_in_args_or_env;;
 let get_hid = Stog_html.get_hid;;
 
-let fun_bibliography (stog, data) env atts subs =
+let fun_bibliography elt_id (stog, data) env atts subs =
   let ((stog, data), hid) = get_hid (stog, data) env in
   let name = Xtmpl.opt_arg_cdata ~def: "default" atts ("", "name") in
   let entries =
@@ -421,16 +426,15 @@ let fun_bibliography (stog, data) env atts subs =
     with Not_found ->
         failwith (Printf.sprintf "No bibliographies for %S" hid)
   in
-  List.fold_left (xml_of_bib_entry env) ((stog, data), []) (List.rev entries)
+  List.fold_left (xml_of_bib_entry env elt_id) ((stog, data), []) (List.rev entries)
 ;;
 
-let rules_bib = [
-    ("", "bibliography"), fun_bibliography ;
+let rules_bib stog elt_id = [
+    ("", "bibliography"), fun_bibliography elt_id ;
     ("", "cite"), fun_cite ;
   ];;
 
-let fun_level_bib = Stog_engine.fun_apply_stog_data_elt_rules
-  (fun _ _ -> rules_bib) ;;
+let fun_level_bib = Stog_engine.fun_apply_stog_data_elt_rules rules_bib ;;
 
 (*let () = Stog_plug.register_level_fun 70 (Stog_plug.compute_elt rules_bib);;*)
 
