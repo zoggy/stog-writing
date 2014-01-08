@@ -357,32 +357,38 @@ let fun_cite (stog, data) env atts subs =
       ((stog, data), subs)
   | Some href ->
       try
-        let (hid, entry) = Smap.find href data.bib_entries in
-        let env = add_bib_entry_env env entry in
-        let ((stog, data), xml) =
-          match subs with
-            [] ->
-              begin
-                match Xtmpl.get_arg atts ("", "format") with
-                  Some format -> ((stog, data), format)
-                | None ->
-                    let nodes = [Xtmpl.E (("", "cite-format"), Xtmpl.atts_empty, [])] in
-                    let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
-                    let res = if nodes = nodes2 then
-                        [Xtmpl.E (("", "bib-field"),
-                           Xtmpl.atts_one ("","name") [Xtmpl.D "rank"],
-                           []
-                          )
-                        ]
-                      else
-                        nodes2
-                    in
-                    ((stog, data), res)
-              end
-          | _ -> ((stog, data), subs)
+        let refs = List.map Stog_misc.strip_string
+          (Stog_misc.split_string href [','])
         in
-        let ((stog, data), text) = Xtmpl.apply_to_xmls (stog, data) env xml in
-        ((stog, data), [mk_bib_entry_link stog hid entry text])
+        let f href ((stog, data), acc) =
+          let (hid, entry) = Smap.find href data.bib_entries in
+          let env = add_bib_entry_env env entry in
+          let ((stog, data), xml) =
+            match subs with
+              [] ->
+                begin
+                  match Xtmpl.get_arg atts ("", "format") with
+                    Some format -> ((stog, data), format)
+                  | None ->
+                      let nodes = [Xtmpl.E (("", "cite-format"), Xtmpl.atts_empty, [])] in
+                      let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
+                      let res = if nodes = nodes2 then
+                          [Xtmpl.E (("", "bib-field"),
+                             Xtmpl.atts_one ("","name") [Xtmpl.D "rank"],
+                             []
+                            )
+                          ]
+                        else
+                          nodes2
+                      in
+                      ((stog, data), res)
+                end
+            | _ -> ((stog, data), subs)
+          in
+          let ((stog, data), text) = Xtmpl.apply_to_xmls (stog, data) env xml in
+          ((stog, data), (mk_bib_entry_link stog hid entry text) :: acc)
+        in
+        List.fold_right f refs ((stog,data), [])
       with
         Not_found ->
           error (Printf.sprintf "Unknown bib entry %S" href);

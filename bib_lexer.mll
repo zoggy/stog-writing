@@ -101,6 +101,7 @@ rule main = parse
 | ident { Ident (Lexing.lexeme lexbuf) }
 
 | eof { EOF }
+| _ { failwith ("Unexpected token: "^(Lexing.lexeme lexbuf)) }
 
 and string = parse
  "\\\""  { Buffer.add_char string_buffer '"'; string lexbuf }
