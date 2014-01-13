@@ -95,7 +95,11 @@ let fun_prepare_notes data env args subs =
           notes := (!count, subs) :: !notes ;
           let target = note_target_id !count in
           let source = note_source_id !count in
-          Xtmpl.E (("","sup"), Xtmpl.atts_one ("", "id") [Xtmpl.D source],
+          Xtmpl.E (("","sup"),
+           Xtmpl.atts_of_list
+             [ ("", "id"), [Xtmpl.D source] ;
+               ("", "class"), [Xtmpl.D "footnote-link"] ;
+             ],
            [
              Xtmpl.E (("", "a"), Xtmpl.atts_one ("", "href") [Xtmpl.D ("#"^target)],
               [  Xtmpl.D (string_of_int !count)])
