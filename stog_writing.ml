@@ -419,7 +419,7 @@ let xml_of_bib_entry env elt_id ((stog, data), acc) entry =
 ;;
 
 let get_in_env = Stog_html.get_in_env;;
-let get_in_args_or_env = Stog_html.get_in_args_or_env;;
+let get_in_args_or_env = Stog_engine.get_in_args_or_env;;
 let get_hid = Stog_html.get_hid;;
 
 let fun_bibliography elt_id (stog, data) env atts subs =
