@@ -343,14 +343,11 @@ let mk_bib_entry_anchor e =
 ;;
 
 let mk_bib_entry_link stog hid e subs =
-  let (_, elt) = Stog_types.elt_by_human_id stog hid in
   let href =
-    Neturl.modify_url
-      ~fragment: (mk_bib_entry_anchor e)
-      (Stog_engine.elt_url stog elt)
+    (Stog_types.string_of_human_id hid)^"#"^(mk_bib_entry_anchor e)
   in
-  Xtmpl.E (("", "a"),
-   Xtmpl.atts_one ("", "href") [Xtmpl.D (Stog_types.string_of_url href)],
+  Xtmpl.E (("", "elt"),
+   Xtmpl.atts_one ("", "href") [Xtmpl.D href],
    subs)
 ;;
 
