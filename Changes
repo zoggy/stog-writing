@@ -1,2 +1,3 @@
 Next release:
+- follow stog changes of next release (hids->paths)
 - use <elt> tag to generate links to bibliography references

@@ -41,17 +41,17 @@ module Smap = Stog_types.Str_map;;
 type wdata =
   { auto_ids_default : bool ;
     auto_ids_by_type : bool Smap.t ;
-    bib_entries : (Stog_types.human_id * Bibtex.entry) Smap.t ;
-    bibs_by_hid : Bibtex.entry list Smap.t Stog_types.Hid_map.t;
-    generated_by_elt : Stog_types.Str_set.t Stog_types.Hid_map.t ;
+    bib_entries : (Stog_types.path * Bibtex.entry) Smap.t ;
+    bibs_by_path : Bibtex.entry list Smap.t Stog_types.Path_map.t;
+    generated_by_elt : Stog_types.Str_set.t Stog_types.Path_map.t ;
   }
 
 let empty_data = {
     auto_ids_default = true ;
     auto_ids_by_type = Smap.empty ;
     bib_entries = Smap.empty ;
-    bibs_by_hid = Stog_types.Hid_map.empty;
-    generated_by_elt = Stog_types.Hid_map.empty ;
+    bibs_by_path = Stog_types.Path_map.empty;
+    generated_by_elt = Stog_types.Path_map.empty ;
   }
 
 let load_config env (stog, data) elts =
@@ -136,14 +136,14 @@ let fun_level_notes = Stog_engine.fun_apply_stog_data_elt_rules (fun _ _ -> rule
 
 (** Bibliographies *)
 
-let add_bib_entry data hid e =
+let add_bib_entry data path e =
   try
     ignore(Smap.find e.Bibtex.id data.bib_entries);
     warning (Printf.sprintf "duplicate entry %S" e.Bibtex.id);
     raise Not_found
   with Not_found ->
       { data with
-        bib_entries = Smap.add e.Bibtex.id (hid, e) data.bib_entries ;
+        bib_entries = Smap.add e.Bibtex.id (path, e) data.bib_entries ;
       }
 ;;
 
@@ -229,13 +229,13 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt
   in
   let entries = List.rev entries in
   let data = List.fold_left
-    (fun data e -> add_bib_entry data elt.Stog_types.elt_human_id e)
+    (fun data e -> add_bib_entry data elt.Stog_types.elt_path e)
     data entries
   in
   try
     ignore(Smap.find name bib_map);
     let msg = Printf.sprintf "A bibliography %S is already defined in %S"
-      name (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
+      name (Stog_types.string_of_path elt.Stog_types.elt_path)
     in
     failwith msg
   with Not_found ->
@@ -254,7 +254,7 @@ let init_bib env (stog,data) elts =
         match Xtmpl.get_arg_cdata atts ("", "files") with
           None -> failwith
             (Printf.sprintf "%s: No 'files' given for bibliography%s"
-             (Stog_types.string_of_human_id elt.Stog_types.elt_human_id)
+             (Stog_types.string_of_path elt.Stog_types.elt_path)
              (match name with None -> "" | Some s -> Printf.sprintf "%S" s)
             )
         | Some s -> s
@@ -280,10 +280,10 @@ let init_bib env (stog,data) elts =
       (data, Smap.empty, 0) elt.Stog_types.elt_defs
     in
     { data with
-      bibs_by_hid = Stog_types.Hid_map.add
-        elt.Stog_types.elt_human_id
+      bibs_by_path = Stog_types.Path_map.add
+        elt.Stog_types.elt_path
         bib_map
-        data.bibs_by_hid ;
+        data.bibs_by_path ;
     }
   in
   let data = List.fold_left f_elt data elts in
@@ -342,9 +342,9 @@ let mk_bib_entry_anchor e =
   Printf.sprintf "bibentry_%s" (escape_bib_entry_id e.Bibtex.id)
 ;;
 
-let mk_bib_entry_link stog hid e subs =
+let mk_bib_entry_link stog path e subs =
   let href =
-    (Stog_types.string_of_human_id hid)^"#"^(mk_bib_entry_anchor e)
+    (Stog_types.string_of_path path)^"#"^(mk_bib_entry_anchor e)
   in
   Xtmpl.E (("", "elt"),
    Xtmpl.atts_one ("", "href") [Xtmpl.D href],
@@ -362,7 +362,7 @@ let fun_cite (stog, data) env atts subs =
           (Stog_misc.split_string href [','])
         in
         let f href ((stog, data), acc) =
-          let (hid, entry) = Smap.find href data.bib_entries in
+          let (path, entry) = Smap.find href data.bib_entries in
           let env = add_bib_entry_env env entry in
           let ((stog, data), xml) =
             match subs with
@@ -387,7 +387,7 @@ let fun_cite (stog, data) env atts subs =
             | _ -> ((stog, data), subs)
           in
           let ((stog, data), text) = Xtmpl.apply_to_xmls (stog, data) env xml in
-          ((stog, data), (mk_bib_entry_link stog hid entry text) :: acc)
+          ((stog, data), (mk_bib_entry_link stog path entry text) :: acc)
         in
         List.fold_right f refs ((stog,data), [])
       with
@@ -417,21 +417,21 @@ let xml_of_bib_entry env elt_id ((stog, data), acc) entry =
 
 let get_in_env = Stog_html.get_in_env;;
 let get_in_args_or_env = Stog_engine.get_in_args_or_env;;
-let get_hid = Stog_html.get_hid;;
+let get_path = Stog_html.get_path;;
 
 let fun_bibliography elt_id (stog, data) env atts subs =
-  let ((stog, data), hid) = get_hid (stog, data) env in
+  let ((stog, data), path) = get_path (stog, data) env in
   let name = Xtmpl.opt_arg_cdata ~def: "default" atts ("", "name") in
   let entries =
     try
-      let bib_map = Stog_types.Hid_map.find
-        (Stog_types.human_id_of_string hid) data.bibs_by_hid
+      let bib_map = Stog_types.Path_map.find
+        (Stog_types.path_of_string path) data.bibs_by_path
       in
       try Smap.find name bib_map
       with Not_found ->
-          failwith (Printf.sprintf "Unknown bibliography %S in %S" name hid)
+          failwith (Printf.sprintf "Unknown bibliography %S in %S" name path)
     with Not_found ->
-        failwith (Printf.sprintf "No bibliographies for %S" hid)
+        failwith (Printf.sprintf "No bibliographies for %S" path)
   in
   List.fold_left (xml_of_bib_entry env elt_id) ((stog, data), []) (List.rev entries)
 ;;
@@ -482,8 +482,8 @@ let fun_p tag elt (stog, data) env atts subs =
         (id, Xtmpl.atts_one ~atts ("", "id") [Xtmpl.D id])
   in
   let set =
-    try Stog_types.Hid_map.find
-      elt.elt_human_id data.generated_by_elt
+    try Stog_types.Path_map.find
+      elt.elt_path data.generated_by_elt
     with Not_found -> Stog_types.Str_set.empty
   in
   match Stog_types.Str_set.mem id set with
@@ -514,8 +514,8 @@ let fun_p tag elt (stog, data) env atts subs =
          ])
       in
       let set = Stog_types.Str_set.add id set in
-      let generated_by_elt = Stog_types.Hid_map.add
-        elt.elt_human_id set data.generated_by_elt
+      let generated_by_elt = Stog_types.Path_map.add
+        elt.elt_path set data.generated_by_elt
       in
       let data = { data with generated_by_elt } in
       ((stog, data), [Xtmpl.E (("", tag), atts, link :: subs)])
@@ -580,18 +580,18 @@ let make_engine ?levels () =
       }
 
     let cache_load _stog data elt t =
-      let hid = elt.elt_human_id in
-      let bibs_by_hid = Stog_types.Hid_map.add hid t.bibs data.bibs_by_hid in
-      let data = { data with bibs_by_hid } in
+      let path = elt.elt_path in
+      let bibs_by_path = Stog_types.Path_map.add path t.bibs data.bibs_by_path in
+      let data = { data with bibs_by_path } in
       Smap.fold
         (fun _ entries data -> List.fold_left
-           (fun data e -> add_bib_entry data hid e) data entries)
+           (fun data e -> add_bib_entry data path e) data entries)
         t.bibs data
 
     let cache_store _stog data elt =
-      let hid = elt.elt_human_id in
+      let path = elt.elt_path in
       {
-        bibs = (try Stog_types.Hid_map.find hid data.bibs_by_hid with Not_found -> Smap.empty) ;
+        bibs = (try Stog_types.Path_map.find path data.bibs_by_path with Not_found -> Smap.empty) ;
       }
   end
   in
