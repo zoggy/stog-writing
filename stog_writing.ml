@@ -92,8 +92,13 @@ let fun_prepare_notes data env args subs =
       match tag with
       | ("", "note") ->
           incr count ;
-          notes := (!count, subs) :: !notes ;
-          let target = note_target_id !count in
+          let note_id = Xtmpl.get_arg_cdata atts ("","id") in
+          notes := (!count, note_id, subs) :: !notes ;
+          let target = 
+            match note_id with
+              None -> note_target_id !count
+            | Some id -> id
+          in
           let source = note_source_id !count in
           Xtmpl.E (("","sup"),
            Xtmpl.atts_of_list
@@ -108,9 +113,9 @@ let fun_prepare_notes data env args subs =
           Xtmpl.E (tag, atts, List.map iter subs)
   in
   let subs = List.map iter subs in
-  let xml_of_note (n, xml) =
+  let xml_of_note (n, note_id, xml) =
     let source = note_source_id n in
-    let target = note_target_id n in
+    let target = match note_id with None -> note_target_id n | Some id -> id in
     Xtmpl.E (("", "div"),
      Xtmpl.atts_of_list [ ("", "class"), [Xtmpl.D "note"] ; ("", "id"), [Xtmpl.D target] ],
      (Xtmpl.E (("", "sup"), Xtmpl.atts_empty,
