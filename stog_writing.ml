@@ -43,7 +43,7 @@ type wdata =
     auto_ids_by_type : bool Smap.t ;
     bib_entries : (Stog_types.path * Bibtex.entry) Smap.t ;
     bibs_by_path : Bibtex.entry list Smap.t Stog_types.Path_map.t;
-    generated_by_elt : Stog_types.Str_set.t Stog_types.Path_map.t ;
+    generated_by_doc : Stog_types.Str_set.t Stog_types.Path_map.t ;
   }
 
 let empty_data = {
@@ -51,10 +51,10 @@ let empty_data = {
     auto_ids_by_type = Smap.empty ;
     bib_entries = Smap.empty ;
     bibs_by_path = Stog_types.Path_map.empty;
-    generated_by_elt = Stog_types.Path_map.empty ;
+    generated_by_doc = Stog_types.Path_map.empty ;
   }
 
-let load_config env (stog, data) elts =
+let load_config env (stog, data) docs =
   let module CF = Config_file in
   let group = new CF.group in
   let o_ids_def = new CF.bool_cp ~group ["automatic_ids"; "default"] true "" in
@@ -137,7 +137,7 @@ let fun_prepare_notes data env args subs =
 ;;
 
 let rules_notes = [ ("", "prepare-notes"), fun_prepare_notes ];;
-let fun_level_notes = Stog_engine.fun_apply_stog_data_elt_rules (fun _ _ -> rules_notes);;
+let fun_level_notes = Stog_engine.fun_apply_stog_data_doc_rules (fun _ _ -> rules_notes);;
 
 (** Bibliographies *)
 
@@ -208,7 +208,7 @@ let sort_bib_entries sort_fields reverse entries =
   List.sort comp entries
 ;;
 
-let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt (data, bib_map, rank) s_files =
+let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix doc (data, bib_map, rank) s_files =
   let sort_fields = Stog_misc.split_string sort [';' ; ',' ] in
   let sort_fields = List.map Stog_misc.strip_string sort_fields in
   let files =
@@ -218,7 +218,7 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt
   let files = List.map
     (fun file ->
        if Filename.is_relative file then
-         Filename.concat (Filename.dirname elt.Stog_types.elt_src) file
+         Filename.concat (Filename.dirname doc.Stog_types.doc_src) file
        else
          file
     ) files
@@ -234,21 +234,21 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix elt
   in
   let entries = List.rev entries in
   let data = List.fold_left
-    (fun data e -> add_bib_entry data elt.Stog_types.elt_path e)
+    (fun data e -> add_bib_entry data doc.Stog_types.doc_path e)
     data entries
   in
   try
     ignore(Smap.find name bib_map);
     let msg = Printf.sprintf "A bibliography %S is already defined in %S"
-      name (Stog_types.string_of_path elt.Stog_types.elt_path)
+      name (Stog_types.string_of_path doc.Stog_types.doc_path)
     in
     failwith msg
   with Not_found ->
       (data, Smap.add name entries bib_map, rank)
 ;;
 
-let init_bib env (stog,data) elts =
-  let rec f_bib elt ?sort ?reverse ?prefix (data, bib_map, rank) = function
+let init_bib env (stog,data) docs =
+  let rec f_bib doc ?sort ?reverse ?prefix (data, bib_map, rank) = function
   | Xtmpl.E (("", "bibliography"), atts, subs) ->
       let name = Xtmpl.get_arg_cdata atts ("", "name") in
       let sort = match Xtmpl.get_arg_cdata atts ("", "sort") with None -> sort | x -> x in
@@ -259,39 +259,39 @@ let init_bib env (stog,data) elts =
         match Xtmpl.get_arg_cdata atts ("", "files") with
           None -> failwith
             (Printf.sprintf "%s: No 'files' given for bibliography%s"
-             (Stog_types.string_of_path elt.Stog_types.elt_path)
+             (Stog_types.string_of_path doc.Stog_types.doc_path)
              (match name with None -> "" | Some s -> Printf.sprintf "%S" s)
             )
         | Some s -> s
       in
-      add_bibliography ?name ?sort ?reverse ?prefix elt (data, bib_map, rank) files
+      add_bibliography ?name ?sort ?reverse ?prefix doc (data, bib_map, rank) files
   | Xtmpl.D _
   | Xtmpl.E _ -> (data, bib_map, rank)
    in
-  let f_def elt (data, bib_map, rank) ((prefix, name), atts, xmls) =
+  let f_def doc (data, bib_map, rank) ((prefix, name), atts, xmls) =
     match prefix, name with
       "", "bib-files" ->
-        add_bibliography elt (data, bib_map, rank) (Xtmpl.string_of_xmls xmls)
+        add_bibliography doc (data, bib_map, rank) (Xtmpl.string_of_xmls xmls)
     | "", "bibliographies" ->
         let sort = Xtmpl.get_arg_cdata atts ("", "sort") in
         let prefix = Xtmpl.get_arg_cdata atts ("", "prefix") in
         let reverse = Xtmpl.get_arg_cdata atts ("", "reverse") in
-        List.fold_left (f_bib elt ?sort ?reverse ?prefix) (data, bib_map, rank) xmls
+        List.fold_left (f_bib doc ?sort ?reverse ?prefix) (data, bib_map, rank) xmls
     | _ -> (data, bib_map, rank)
   in
-  let f_elt data elt_id =
-    let elt = Stog_types.elt stog elt_id in
-    let (data, bib_map, _) = List.fold_left (f_def elt)
-      (data, Smap.empty, 0) elt.Stog_types.elt_defs
+  let f_doc data doc_id =
+    let doc = Stog_types.doc stog doc_id in
+    let (data, bib_map, _) = List.fold_left (f_def doc)
+      (data, Smap.empty, 0) doc.Stog_types.doc_defs
     in
     { data with
       bibs_by_path = Stog_types.Path_map.add
-        elt.Stog_types.elt_path
+        doc.Stog_types.doc_path
         bib_map
         data.bibs_by_path ;
     }
   in
-  let data = List.fold_left f_elt data elts in
+  let data = List.fold_left f_doc data docs in
   (stog, data)
 ;;
 
@@ -351,7 +351,7 @@ let mk_bib_entry_link stog path e subs =
   let href =
     (Stog_types.string_of_path path)^"#"^(mk_bib_entry_anchor e)
   in
-  Xtmpl.E (("", "elt"),
+  Xtmpl.E (("", "doc"),
    Xtmpl.atts_one ("", "href") [Xtmpl.D href],
    subs)
 ;;
@@ -401,10 +401,10 @@ let fun_cite (stog, data) env atts subs =
           ((stog, data), subs)
 ;;
 
-let xml_of_bib_entry env elt_id ((stog, data), acc) entry =
+let xml_of_bib_entry env doc_id ((stog, data), acc) entry =
   let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib-entry.tmpl" in
   let env2 =
-    let base_rules = Stog_html.build_base_rules stog elt_id in
+    let base_rules = Stog_html.build_base_rules stog doc_id in
     let env = Xtmpl.env_of_list base_rules in
     add_bib_entry_env env entry
   in
@@ -424,7 +424,7 @@ let get_in_env = Stog_html.get_in_env;;
 let get_in_args_or_env = Stog_engine.get_in_args_or_env;;
 let get_path = Stog_html.get_path;;
 
-let fun_bibliography elt_id (stog, data) env atts subs =
+let fun_bibliography doc_id (stog, data) env atts subs =
   let ((stog, data), path) = get_path (stog, data) env in
   let name = Xtmpl.opt_arg_cdata ~def: "default" atts ("", "name") in
   let entries =
@@ -438,17 +438,17 @@ let fun_bibliography elt_id (stog, data) env atts subs =
     with Not_found ->
         failwith (Printf.sprintf "No bibliographies for %S" path)
   in
-  List.fold_left (xml_of_bib_entry env elt_id) ((stog, data), []) (List.rev entries)
+  List.fold_left (xml_of_bib_entry env doc_id) ((stog, data), []) (List.rev entries)
 ;;
 
-let rules_bib stog elt_id = [
-    ("", "bibliography"), fun_bibliography elt_id ;
+let rules_bib stog doc_id = [
+    ("", "bibliography"), fun_bibliography doc_id ;
     ("", "cite"), fun_cite ;
   ];;
 
-let fun_level_bib = Stog_engine.fun_apply_stog_data_elt_rules rules_bib ;;
+let fun_level_bib = Stog_engine.fun_apply_stog_data_doc_rules rules_bib ;;
 
-(*let () = Stog_plug.register_level_fun 70 (Stog_plug.compute_elt rules_bib);;*)
+(*let () = Stog_plug.register_level_fun 70 (Stog_plug.compute_doc rules_bib);;*)
 
 (** Adding references to paragraphs and
   handling blocks (like environments in latex).
@@ -477,7 +477,7 @@ let create_id xmls =
   String.sub s 0 (min len max_size)
 ;;
 
-let fun_p tag elt (stog, data) env atts subs =
+let fun_p tag doc (stog, data) env atts subs =
   let (id, atts) =
     match Xtmpl.get_arg_cdata atts ("", "id") with
       Some s -> (s, atts)
@@ -488,7 +488,7 @@ let fun_p tag elt (stog, data) env atts subs =
   in
   let set =
     try Stog_types.Path_map.find
-      elt.elt_path data.generated_by_elt
+      doc.doc_path data.generated_by_doc
     with Not_found -> Stog_types.Str_set.empty
   in
   match Stog_types.Str_set.mem id set with
@@ -519,22 +519,22 @@ let fun_p tag elt (stog, data) env atts subs =
          ])
       in
       let set = Stog_types.Str_set.add id set in
-      let generated_by_elt = Stog_types.Path_map.add
-        elt.elt_path set data.generated_by_elt
+      let generated_by_doc = Stog_types.Path_map.add
+        doc.doc_path set data.generated_by_doc
       in
-      let data = { data with generated_by_elt } in
+      let data = { data with generated_by_doc } in
       ((stog, data), [Xtmpl.E (("", tag), atts, link :: subs)])
 ;;
 
-let rules_auto_ids stog elt_id =
-  let elt = Stog_types.elt stog elt_id in
+let rules_auto_ids stog doc_id =
+  let doc = Stog_types.doc stog doc_id in
   let f tag (stog, data) env atts subs =
     let b =
-      try Smap.find elt.Stog_types.elt_type data.auto_ids_by_type
+      try Smap.find doc.Stog_types.doc_type data.auto_ids_by_type
       with Not_found -> data.auto_ids_default
     in
     if b then
-      fun_p tag elt (stog, data) env atts subs
+      fun_p tag doc (stog, data) env atts subs
     else
       raise Xtmpl.No_change
   in
@@ -544,7 +544,7 @@ let rules_auto_ids stog elt_id =
 ;;
 
 let fun_level_auto_ids =
-  Stog_engine.fun_apply_stog_data_elt_rules rules_auto_ids
+  Stog_engine.fun_apply_stog_data_doc_rules rules_auto_ids
 ;;
 
 let level_funs =
@@ -584,8 +584,8 @@ let make_engine ?levels () =
         bibs : Bibtex.entry list Smap.t ;
       }
 
-    let cache_load _stog data elt t =
-      let path = elt.elt_path in
+    let cache_load _stog data doc t =
+      let path = doc.doc_path in
       let bibs_by_path = Stog_types.Path_map.add path t.bibs data.bibs_by_path in
       let data = { data with bibs_by_path } in
       Smap.fold
@@ -593,8 +593,8 @@ let make_engine ?levels () =
            (fun data e -> add_bib_entry data path e) data entries)
         t.bibs data
 
-    let cache_store _stog data elt =
-      let path = elt.elt_path in
+    let cache_store _stog data doc =
+      let path = doc.doc_path in
       {
         bibs = (try Stog_types.Path_map.find path data.bibs_by_path with Not_found -> Smap.empty) ;
       }
