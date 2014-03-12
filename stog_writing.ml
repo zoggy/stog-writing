@@ -430,13 +430,15 @@ let fun_bibliography doc_id (stog, data) env atts subs =
   let entries =
     try
       let bib_map = Stog_types.Path_map.find
-        (Stog_types.path_of_string path) data.bibs_by_path
+        path data.bibs_by_path
       in
       try Smap.find name bib_map
       with Not_found ->
-          failwith (Printf.sprintf "Unknown bibliography %S in %S" name path)
+          failwith (Printf.sprintf "Unknown bibliography %S in %S" 
+           name (Stog_types.string_of_path path))
     with Not_found ->
-        failwith (Printf.sprintf "No bibliographies for %S" path)
+        failwith (Printf.sprintf "No bibliographies for %S" 
+         (Stog_types.string_of_path path))
   in
   List.fold_left (xml_of_bib_entry env doc_id) ((stog, data), []) (List.rev entries)
 ;;
