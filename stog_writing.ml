@@ -41,17 +41,17 @@ module Smap = Stog_types.Str_map;;
 type wdata =
   { auto_ids_default : bool ;
     auto_ids_by_type : bool Smap.t ;
-    bib_entries : (Stog_types.path * Bibtex.entry) Smap.t ;
-    bibs_by_path : Bibtex.entry list Smap.t Stog_types.Path_map.t;
-    generated_by_doc : Stog_types.Str_set.t Stog_types.Path_map.t ;
+    bib_entries : (Stog_path.path * Bibtex.entry) Smap.t ;
+    bibs_by_path : Bibtex.entry list Smap.t Stog_path.Map.t;
+    generated_by_doc : Stog_types.Str_set.t Stog_path.Map.t ;
   }
 
 let empty_data = {
     auto_ids_default = true ;
     auto_ids_by_type = Smap.empty ;
     bib_entries = Smap.empty ;
-    bibs_by_path = Stog_types.Path_map.empty;
-    generated_by_doc = Stog_types.Path_map.empty ;
+    bibs_by_path = Stog_path.Map.empty;
+    generated_by_doc = Stog_path.Map.empty ;
   }
 
 let load_config env (stog, data) docs =
@@ -240,7 +240,7 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix doc
   try
     ignore(Smap.find name bib_map);
     let msg = Printf.sprintf "A bibliography %S is already defined in %S"
-      name (Stog_types.string_of_path doc.Stog_types.doc_path)
+      name (Stog_path.to_string doc.Stog_types.doc_path)
     in
     failwith msg
   with Not_found ->
@@ -259,7 +259,7 @@ let init_bib env (stog,data) docs =
         match Xtmpl.get_arg_cdata atts ("", "files") with
           None -> failwith
             (Printf.sprintf "%s: No 'files' given for bibliography%s"
-             (Stog_types.string_of_path doc.Stog_types.doc_path)
+             (Stog_path.to_string doc.Stog_types.doc_path)
              (match name with None -> "" | Some s -> Printf.sprintf "%S" s)
             )
         | Some s -> s
@@ -279,19 +279,19 @@ let init_bib env (stog,data) docs =
         List.fold_left (f_bib doc ?sort ?reverse ?prefix) (data, bib_map, rank) xmls
     | _ -> (data, bib_map, rank)
   in
-  let f_doc data doc_id =
+  let f_doc doc_id data =
     let doc = Stog_types.doc stog doc_id in
     let (data, bib_map, _) = List.fold_left (f_def doc)
       (data, Smap.empty, 0) doc.Stog_types.doc_defs
     in
     { data with
-      bibs_by_path = Stog_types.Path_map.add
+      bibs_by_path = Stog_path.Map.add
         doc.Stog_types.doc_path
         bib_map
         data.bibs_by_path ;
     }
   in
-  let data = List.fold_left f_doc data docs in
+  let data = Stog_types.Doc_set.fold f_doc docs data in
   (stog, data)
 ;;
 
@@ -349,7 +349,7 @@ let mk_bib_entry_anchor e =
 
 let mk_bib_entry_link stog path e subs =
   let href =
-    (Stog_types.string_of_path path)^"#"^(mk_bib_entry_anchor e)
+    (Stog_path.to_string path)^"#"^(mk_bib_entry_anchor e)
   in
   Xtmpl.E (("", "doc"),
    Xtmpl.atts_one ("", "href") [Xtmpl.D href],
@@ -429,16 +429,16 @@ let fun_bibliography doc_id (stog, data) env atts subs =
   let name = Xtmpl.opt_arg_cdata ~def: "default" atts ("", "name") in
   let entries =
     try
-      let bib_map = Stog_types.Path_map.find
+      let bib_map = Stog_path.Map.find
         path data.bibs_by_path
       in
       try Smap.find name bib_map
       with Not_found ->
           failwith (Printf.sprintf "Unknown bibliography %S in %S" 
-           name (Stog_types.string_of_path path))
+           name (Stog_path.to_string path))
     with Not_found ->
         failwith (Printf.sprintf "No bibliographies for %S" 
-         (Stog_types.string_of_path path))
+         (Stog_path.to_string path))
   in
   List.fold_left (xml_of_bib_entry env doc_id) ((stog, data), []) (List.rev entries)
 ;;
@@ -489,7 +489,7 @@ let fun_p tag doc (stog, data) env atts subs =
         (id, Xtmpl.atts_one ~atts ("", "id") [Xtmpl.D id])
   in
   let set =
-    try Stog_types.Path_map.find
+    try Stog_path.Map.find
       doc.doc_path data.generated_by_doc
     with Not_found -> Stog_types.Str_set.empty
   in
@@ -521,7 +521,7 @@ let fun_p tag doc (stog, data) env atts subs =
          ])
       in
       let set = Stog_types.Str_set.add id set in
-      let generated_by_doc = Stog_types.Path_map.add
+      let generated_by_doc = Stog_path.Map.add
         doc.doc_path set data.generated_by_doc
       in
       let data = { data with generated_by_doc } in
@@ -588,7 +588,7 @@ let make_engine ?levels () =
 
     let cache_load _stog data doc t =
       let path = doc.doc_path in
-      let bibs_by_path = Stog_types.Path_map.add path t.bibs data.bibs_by_path in
+      let bibs_by_path = Stog_path.Map.add path t.bibs data.bibs_by_path in
       let data = { data with bibs_by_path } in
       Smap.fold
         (fun _ entries data -> List.fold_left
@@ -598,7 +598,7 @@ let make_engine ?levels () =
     let cache_store _stog data doc =
       let path = doc.doc_path in
       {
-        bibs = (try Stog_types.Path_map.find path data.bibs_by_path with Not_found -> Smap.empty) ;
+        bibs = (try Stog_path.Map.find path data.bibs_by_path with Not_found -> Smap.empty) ;
       }
   end
   in
