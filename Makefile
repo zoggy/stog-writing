@@ -26,7 +26,8 @@
 #                                                                               #
 #################################################################################
 
-VERSION=0.10.0
+# DO NOT FORGET TO UPDATE META FILE
+VERSION=0.11.0
 
 MKDIR=mkdir -p
 CP=cp -f
