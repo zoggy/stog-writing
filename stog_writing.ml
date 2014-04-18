@@ -401,8 +401,8 @@ let fun_cite (stog, data) env atts subs =
           ((stog, data), subs)
 ;;
 
-let xml_of_bib_entry env doc_id ((stog, data), acc) entry =
-  let tmpl = Filename.concat stog.Stog_types.stog_tmpl_dir "bib-entry.tmpl" in
+let xml_of_bib_entry env doc_id doc ((stog, data), acc) entry =
+  let tmpl = Stog_tmpl.get_template_file stog doc "bib-entry.tmpl" in
   let env2 =
     let base_rules = Stog_html.build_base_rules stog doc_id in
     let env = Xtmpl.env_of_list base_rules in
@@ -440,7 +440,8 @@ let fun_bibliography doc_id (stog, data) env atts subs =
         failwith (Printf.sprintf "No bibliographies for %S" 
          (Stog_path.to_string path))
   in
-  List.fold_left (xml_of_bib_entry env doc_id) ((stog, data), []) (List.rev entries)
+  let doc = Stog_types.doc stog doc_id in
+  List.fold_left (xml_of_bib_entry env doc_id doc) ((stog, data), []) (List.rev entries)
 ;;
 
 let rules_bib stog doc_id = [

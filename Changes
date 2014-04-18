@@ -1,5 +1,8 @@
+Next release:
+- upgrade to stog > 0.11.1
+
 Release 0.11.0:
-- <note> handles an id attribute used instead of the one 
+- <note> handles an id attribute used instead of the one
   forged from the node number
 - follow stog changes of next release (hids->paths, documents
   instead of elements)
