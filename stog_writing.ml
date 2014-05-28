@@ -94,7 +94,7 @@ let fun_prepare_notes data env args subs =
           incr count ;
           let note_id = Xtmpl.get_arg_cdata atts ("","id") in
           notes := (!count, note_id, subs) :: !notes ;
-          let target = 
+          let target =
             match note_id with
               None -> note_target_id !count
             | Some id -> id
@@ -366,35 +366,44 @@ let fun_cite (stog, data) env atts subs =
         let refs = List.map Stog_misc.strip_string
           (Stog_misc.split_string href [','])
         in
+        let get_def (stog, data) tag def =
+          match Xtmpl.get_arg atts ("", tag) with
+            Some xml -> ((stog, data), xml)
+          | None ->
+              let nodes = [Xtmpl.E (("", "cite-"^tag), Xtmpl.atts_empty, [])] in
+              let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
+              let res = if nodes = nodes2 then def else nodes2 in
+              ((stog, data), res)
+        in
+        let ((stog, data), cite_begin) = get_def (stog,data) "begin" [] in
+        let ((stog, data), cite_end) = get_def (stog,data) "end" [] in
+        let ((stog, data), cite_sep) = get_def (stog,data) "sep" [Xtmpl.D ", "] in
+
         let f href ((stog, data), acc) =
           let (path, entry) = Smap.find href data.bib_entries in
           let env = add_bib_entry_env env entry in
           let ((stog, data), xml) =
             match subs with
-              [] ->
-                begin
-                  match Xtmpl.get_arg atts ("", "format") with
-                    Some format -> ((stog, data), format)
-                  | None ->
-                      let nodes = [Xtmpl.E (("", "cite-format"), Xtmpl.atts_empty, [])] in
-                      let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
-                      let res = if nodes = nodes2 then
-                          [Xtmpl.E (("", "bib-field"),
-                             Xtmpl.atts_one ("","name") [Xtmpl.D "rank"],
+              [] -> get_def (stog, data) "format"
+                [Xtmpl.E (("", "bib-field"),
+                   Xtmpl.atts_one ("","name") [Xtmpl.D "rank"],
                              []
-                            )
-                          ]
-                        else
-                          nodes2
-                      in
-                      ((stog, data), res)
-                end
+                  )
+                ]
             | _ -> ((stog, data), subs)
           in
           let ((stog, data), text) = Xtmpl.apply_to_xmls (stog, data) env xml in
-          ((stog, data), (mk_bib_entry_link stog path entry text) :: acc)
+          let link = mk_bib_entry_link stog path entry text in
+          let acc =
+            match acc with
+              [] -> [link]
+            | acc -> link :: cite_sep @ acc
+          in
+          ((stog, data), acc)
         in
-        List.fold_right f refs ((stog,data), [])
+        let ((stog, data), xmls) = List.fold_right f refs ((stog,data), []) in
+        let xmls = cite_begin @ xmls @ cite_end in
+        ((stog,data), xmls)
       with
         Not_found ->
           error (Printf.sprintf "Unknown bib entry %S" href);
@@ -434,11 +443,26 @@ let fun_bibliography doc_id (stog, data) env atts subs =
       in
       try Smap.find name bib_map
       with Not_found ->
-          failwith (Printf.sprintf "Unknown bibliography %S in %S" 
+          failwith (Printf.sprintf "Unknown bibliography %S in %S"
            name (Stog_path.to_string path))
     with Not_found ->
-        failwith (Printf.sprintf "No bibliographies for %S" 
+        failwith (Printf.sprintf "No bibliographies for %S"
          (Stog_path.to_string path))
+  in
+  let entries =
+    match Xtmpl.get_arg_cdata atts ("", "keywords") with
+      None -> entries
+    | Some s ->
+        let kwds = Stog_misc.split_string s [',' ; ';'] in
+        let pred entry =
+          let e_kwds =
+            try Stog_misc.split_string
+              (List.assoc "keywords" entry.Bibtex.fields) [',' ; ';']
+            with Not_found -> []
+          in
+          List.for_all (fun kwd -> List.mem kwd e_kwds) kwds
+        in
+        List.filter pred entries
   in
   let doc = Stog_types.doc stog doc_id in
   List.fold_left (xml_of_bib_entry env doc_id doc) ((stog, data), []) (List.rev entries)

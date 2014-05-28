@@ -1,3 +1,10 @@
+Next release:
+- more powerful format specification in <cite>:
+  <cite begin="..." end="..." sep="..." format="..."/>
+  and also look for <cite-begin>, <cite-end> and <cite-sep> in environment
+- <bibliography keywords="kwd1,.."> to include bibliography items
+  having the required keywords associated in keywords fields
+
 Release 0.12.0:
 - upgrade to stog > 0.11.1
 
