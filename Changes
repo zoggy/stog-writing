@@ -1,4 +1,4 @@
-Next release:
+Release 0.13.0:
 - more powerful format specification in <cite>:
   <cite begin="..." end="..." sep="..." format="..."/>
   and also look for <cite-begin>, <cite-end> and <cite-sep> in environment
