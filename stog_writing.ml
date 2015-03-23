@@ -92,7 +92,7 @@ let fun_prepare_notes data env args subs =
       match tag with
       | ("", "note") ->
           incr count ;
-          let note_id = Xtmpl.get_arg_cdata atts ("","id") in
+          let note_id = Xtmpl.get_att_cdata atts ("","id") in
           notes := (!count, note_id, subs) :: !notes ;
           let target =
             match note_id with
@@ -250,13 +250,13 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix doc
 let init_bib env (stog,data) docs =
   let rec f_bib doc ?sort ?reverse ?prefix (data, bib_map, rank) = function
   | Xtmpl.E (("", "bibliography"), atts, subs) ->
-      let name = Xtmpl.get_arg_cdata atts ("", "name") in
-      let sort = match Xtmpl.get_arg_cdata atts ("", "sort") with None -> sort | x -> x in
-      let prefix = match Xtmpl.get_arg_cdata atts ("", "prefix") with None -> prefix | x -> x in
-      let reverse = match Xtmpl.get_arg_cdata atts ("", "reverse") with None -> reverse | x -> x in
+      let name = Xtmpl.get_att_cdata atts ("", "name") in
+      let sort = match Xtmpl.get_att_cdata atts ("", "sort") with None -> sort | x -> x in
+      let prefix = match Xtmpl.get_att_cdata atts ("", "prefix") with None -> prefix | x -> x in
+      let reverse = match Xtmpl.get_att_cdata atts ("", "reverse") with None -> reverse | x -> x in
       let reverse = Stog_misc.map_opt Stog_io.bool_of_string reverse in
       let files =
-        match Xtmpl.get_arg_cdata atts ("", "files") with
+        match Xtmpl.get_att_cdata atts ("", "files") with
           None -> failwith
             (Printf.sprintf "%s: No 'files' given for bibliography%s"
              (Stog_path.to_string doc.Stog_types.doc_path)
@@ -273,9 +273,9 @@ let init_bib env (stog,data) docs =
       "", "bib-files" ->
         add_bibliography doc (data, bib_map, rank) (Xtmpl.string_of_xmls xmls)
     | "", "bibliographies" ->
-        let sort = Xtmpl.get_arg_cdata atts ("", "sort") in
-        let prefix = Xtmpl.get_arg_cdata atts ("", "prefix") in
-        let reverse = Xtmpl.get_arg_cdata atts ("", "reverse") in
+        let sort = Xtmpl.get_att_cdata atts ("", "sort") in
+        let prefix = Xtmpl.get_att_cdata atts ("", "prefix") in
+        let reverse = Xtmpl.get_att_cdata atts ("", "reverse") in
         List.fold_left (f_bib doc ?sort ?reverse ?prefix) (data, bib_map, rank) xmls
     | _ -> (data, bib_map, rank)
   in
@@ -298,7 +298,7 @@ let init_bib env (stog,data) docs =
 let fun_level_init = Stog_engine.Fun_stog_data init_bib;;
 
 let fun_bib_field e data env atts _ =
-  match Xtmpl.get_arg_cdata atts ("", "name") with
+  match Xtmpl.get_att_cdata atts ("", "name") with
     None ->
       warning
         (Printf.sprintf "No \"name\" attribute for bib entry %S" (e.Bibtex.id));
@@ -310,15 +310,15 @@ let fun_bib_field e data env atts _ =
 let add_bib_entry_env env e =
   let env = List.fold_left
     (fun env (fd, v) ->
-       Xtmpl.env_add_att
+       Xtmpl.env_add_xml
          (Printf.sprintf "bib-entry-%s" fd) [Xtmpl.D v] env
     )
       env
       e.Bibtex.fields
   in
-  let env = Xtmpl.env_add "bib-field" (fun_bib_field e) env in
-  let env = Xtmpl.env_add_att "bib-entry-id" [Xtmpl.D e.Bibtex.id] env in
-  let env = Xtmpl.env_add_att "bib-entry-kind" [Xtmpl.D e.Bibtex.kind] env in
+  let env = Xtmpl.env_add_cb "bib-field" (fun_bib_field e) env in
+  let env = Xtmpl.env_add_xml "bib-entry-id" [Xtmpl.D e.Bibtex.id] env in
+  let env = Xtmpl.env_add_xml "bib-entry-kind" [Xtmpl.D e.Bibtex.kind] env in
   env
 ;;
 
@@ -357,7 +357,7 @@ let mk_bib_entry_link stog path e subs =
 ;;
 
 let fun_cite (stog, data) env atts subs =
-  match Xtmpl.get_arg_cdata atts ("", "href") with
+  match Xtmpl.get_att_cdata atts ("", "href") with
     None ->
       error "Missing href in <cite>";
       ((stog, data), subs)
@@ -367,7 +367,7 @@ let fun_cite (stog, data) env atts subs =
           (Stog_misc.split_string href [','])
         in
         let get_def (stog, data) tag def =
-          match Xtmpl.get_arg atts ("", tag) with
+          match Xtmpl.get_att atts ("", tag) with
             Some xml -> ((stog, data), xml)
           | None ->
               let nodes = [Xtmpl.E (("", "cite-"^tag), Xtmpl.atts_empty, [])] in
@@ -435,7 +435,7 @@ let get_path = Stog_html.get_path;;
 
 let fun_bibliography doc_id (stog, data) env atts subs =
   let ((stog, data), path) = get_path (stog, data) env in
-  let name = Xtmpl.opt_arg_cdata ~def: "default" atts ("", "name") in
+  let name = Xtmpl.opt_att_cdata ~def: "default" atts ("", "name") in
   let entries =
     try
       let bib_map = Stog_path.Map.find
@@ -450,7 +450,7 @@ let fun_bibliography doc_id (stog, data) env atts subs =
          (Stog_path.to_string path))
   in
   let entries =
-    match Xtmpl.get_arg_cdata atts ("", "keywords") with
+    match Xtmpl.get_att_cdata atts ("", "keywords") with
       None -> entries
     | Some s ->
         let kwds = Stog_misc.split_string s [',' ; ';'] in
@@ -506,7 +506,7 @@ let create_id xmls =
 
 let fun_p tag doc (stog, data) env atts subs =
   let (id, atts) =
-    match Xtmpl.get_arg_cdata atts ("", "id") with
+    match Xtmpl.get_att_cdata atts ("", "id") with
       Some s -> (s, atts)
     | None ->
         (* create a hopefully unique id *)
