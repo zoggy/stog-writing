@@ -1,3 +1,6 @@
+Next release:
+- move to Xtmpl 0.11 (use new functions)
+
 Release 0.13.0:
 - more powerful format specification in <cite>:
   <cite begin="..." end="..." sep="..." format="..."/>
