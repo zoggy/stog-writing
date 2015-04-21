@@ -540,7 +540,7 @@ let fun_p tag doc (stog, data) env atts subs =
          [Xtmpl.E (("", "img"),
             Xtmpl.atts_of_list
               [ ("", "src"), [Xtmpl.D (base_url^"/paragraph-url.png")] ;
-                ("", "alt"), [Xtmpl.D "anchor"]
+                ("", "alt"), [Xtmpl.D ""]
               ],
             [])
          ])
