@@ -38,43 +38,50 @@ let rc_file stog = Stog_plug.plugin_config_file stog module_name;;
 open Stog_types;;
 module Smap = Stog_types.Str_map;;
 
+module W = Ocf.Wrapper
+
+let smap_wrapper = W.string_map
+  ~fold: Smap.fold ~add: Smap.add ~empty: Smap.empty
+
+type auto_ids =
+  { default : bool  [@ocf W.bool, true] ;
+    by_type : bool Smap.t
+      [@ocf smap_wrapper W.bool, Smap.empty]
+      [@ocf.label "by-type"]
+      [@ocf.doc "associations between document type and boolean, like { page: false, post: true, ..}"] ;
+  } [@@ocf]
+
 type wdata =
-  { auto_ids_default : bool ;
-    auto_ids_by_type : bool Smap.t ;
+  { auto_ids : auto_ids ;
     bib_entries : (Stog_path.path * Bibtex.entry) Smap.t ;
     bibs_by_path : Bibtex.entry list Smap.t Stog_path.Map.t;
     generated_by_doc : Stog_types.Str_set.t Stog_path.Map.t ;
   }
 
 let empty_data = {
-    auto_ids_default = true ;
-    auto_ids_by_type = Smap.empty ;
+    auto_ids = default_auto_ids ;
     bib_entries = Smap.empty ;
     bibs_by_path = Stog_path.Map.empty;
     generated_by_doc = Stog_path.Map.empty ;
   }
 
 let load_config env (stog, data) docs =
-  let module CF = Config_file in
-  let group = new CF.group in
-  let o_ids_def = new CF.bool_cp ~group ["automatic_ids"; "default"] true "" in
-  let o_ids_typ = new CF.list_cp
-    (CF.tuple2_wrappers CF.string_wrappers CF.bool_wrappers) ~group
-    ["automatic_ids"; "by_type"] [] "pairs (type, bool) specifying whether to use automatic ids on element types"
-  in
+  let auto_ids = Ocf.option auto_ids_wrapper default_auto_ids in
+  let group = Ocf.add Ocf.group ["automatic_ids"] auto_ids in
   let rc_file = rc_file stog in
-  group#read rc_file;
-  group#write rc_file;
+  if not (Sys.file_exists rc_file) then
+    Ocf.to_file group rc_file;
 
-  let data =
-    { data with
-      auto_ids_default = o_ids_def#get ;
-      auto_ids_by_type =
-        List.fold_left (fun acc (t, b) -> Smap.add t b acc)
-        data.auto_ids_by_type o_ids_typ#get;
-    }
-  in
-  (stog, data)
+  try
+    Ocf.from_file group rc_file ;
+    let data =
+      { data with
+        auto_ids = Ocf.get auto_ids ;
+      }
+    in
+    (stog, data)
+  with
+    Ocf.Error e -> failwith (Ocf.string_of_error e)
 ;;
 
 
@@ -557,8 +564,8 @@ let rules_auto_ids stog doc_id =
   let doc = Stog_types.doc stog doc_id in
   let f tag (stog, data) env atts subs =
     let b =
-      try Smap.find doc.Stog_types.doc_type data.auto_ids_by_type
-      with Not_found -> data.auto_ids_default
+      try Smap.find doc.Stog_types.doc_type data.auto_ids.by_type
+      with Not_found -> data.auto_ids.default
     in
     if b then
       fun_p tag doc (stog, data) env atts subs

@@ -1,4 +1,5 @@
 Next release:
+- configuration file are in JSON syntax (using Ocf 0.3.0)
 - move to Xtmpl 0.11 (use new functions)
 
 Release 0.13.0:
