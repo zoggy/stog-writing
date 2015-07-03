@@ -47,7 +47,6 @@ type auto_ids =
   { default : bool  [@ocf W.bool, true] ;
     by_type : bool Smap.t
       [@ocf smap_wrapper W.bool, Smap.empty]
-      [@ocf.label "by-type"]
       [@ocf.doc "associations between document type and boolean, like { page: false, post: true, ..}"] ;
   } [@@ocf]
 
