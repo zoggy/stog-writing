@@ -27,7 +27,7 @@
 #################################################################################
 
 # DO NOT FORGET TO UPDATE META FILE
-VERSION=0.13.0
+VERSION=0.15.0
 
 MKDIR=mkdir -p
 CP=cp -f
