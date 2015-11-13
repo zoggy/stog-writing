@@ -1,3 +1,6 @@
+Next release:
+- use Xtmpl > 0.13.0
+
 Release 0.15.0:
 - configuration file are in JSON syntax (using Ocf 0.3.0)
 - move to Xtmpl 0.11 (use new functions)

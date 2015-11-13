@@ -37,6 +37,9 @@ let rc_file stog = Stog_plug.plugin_config_file stog module_name;;
 
 open Stog_types;;
 module Smap = Stog_types.Str_map;;
+module XR = Xtmpl_rewrite
+module XH = Xtmpl_xhtml
+module Xml = Xtmpl_xml
 
 module W = Ocf.Wrapper
 
@@ -89,16 +92,15 @@ let load_config env (stog, data) docs =
 let note_source_id n = Printf.sprintf "source_note_%d" n;;
 let note_target_id n = Printf.sprintf "target_note_%d" n;;
 
-let fun_prepare_notes data env args subs =
+let fun_prepare_notes data env ?loc args subs =
   let count = ref 0 in
   let notes = ref [] in
-  let rec iter = function
-  | Xtmpl.D _ as x -> x
-  | Xtmpl.E (tag, atts, subs) ->
-      match tag with
-      | ("", "note") ->
+  let rec iter xml =
+    match xml with
+    | XR.D _ | XR.C _ | XR.PI _ -> xml
+    | XR.E { XR.name = ("", "note"); atts ; subs} ->
           incr count ;
-          let note_id = Xtmpl.get_att_cdata atts ("","id") in
+          let note_id = XR.get_att_cdata atts ("","id") in
           notes := (!count, note_id, subs) :: !notes ;
           let target =
             match note_id with
@@ -106,40 +108,30 @@ let fun_prepare_notes data env args subs =
             | Some id -> id
           in
           let source = note_source_id !count in
-          Xtmpl.E (("","sup"),
-           Xtmpl.atts_of_list
-             [ ("", "id"), [Xtmpl.D source] ;
-               ("", "class"), [Xtmpl.D "footnote-link"] ;
-             ],
-           [
-             Xtmpl.E (("", "a"), Xtmpl.atts_one ("", "href") [Xtmpl.D ("#"^target)],
-              [  Xtmpl.D (string_of_int !count)])
-           ])
-      | _ ->
-          Xtmpl.E (tag, atts, List.map iter subs)
+          XH.sup ~id: source ~class_: "footnote-link"
+          [
+            XH.a ~href: ("#"^target) [ XR.cdata (string_of_int !count)]
+          ]
+    | XR.E node ->
+        XR.E { node with XR.subs = List.map iter node.XR.subs }
   in
   let subs = List.map iter subs in
   let xml_of_note (n, note_id, xml) =
     let source = note_source_id n in
     let target = match note_id with None -> note_target_id n | Some id -> id in
-    Xtmpl.E (("", "div"),
-     Xtmpl.atts_of_list [ ("", "class"), [Xtmpl.D "note"] ; ("", "id"), [Xtmpl.D target] ],
-     (Xtmpl.E (("", "sup"), Xtmpl.atts_empty,
-       [Xtmpl.E (("", "a"),
-          Xtmpl.atts_one ("", "href") [Xtmpl.D ("#"^source)],
-          [Xtmpl.D (string_of_int n)])
-       ]
-      ) ::
-      Xtmpl.D " " :: xml
-     ))
+    XH.div ~class_: "note" ~id: target 
+      (
+       (XH.sup [XH.a ~href: ("#"^source) [XR.cdata (string_of_int n)]]) ::
+         (XR.cdata " ") :: xml
+      )
+     
   in
   let xml =
-    Xtmpl.E (("", "div"),
-     Xtmpl.atts_one ("", "class") [Xtmpl.D "notes"],
-     List.rev_map xml_of_note !notes)
+    XH.div ~class_: "notes"
+     (List.rev_map xml_of_note !notes)
   in
-  let atts = Xtmpl.atts_one ("", "notes") [ xml ] in
-  (data, [ Xtmpl.E (("", Xtmpl.tag_env), atts, subs) ])
+  let atts = XR.atts_one ("", "notes") [ xml ] in
+  (data, [ XR.node ("", XR.tag_env) ~atts subs ])
 ;;
 
 let rules_notes = [ ("", "prepare-notes"), fun_prepare_notes ];;
@@ -158,11 +150,11 @@ let add_bib_entry data path e =
       }
 ;;
 
-let bib_entries_of_file ?prefix file =
+let bib_entries_of_file ?prefix ?loc file =
   verbose (Printf.sprintf "loading bibtex file %S" file);
   let inch =
     try open_in file
-    with Sys_error s -> failwith s
+    with Sys_error s -> failwith (Xml.loc_sprintf loc "%s" s)
   in
   try
     let lexbuf = Lexing.from_channel inch in
@@ -214,7 +206,8 @@ let sort_bib_entries sort_fields reverse entries =
   List.sort comp entries
 ;;
 
-let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix doc (data, bib_map, rank) s_files =
+let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) 
+  ?prefix ?loc doc (data, bib_map, rank) s_files =
   let sort_fields = Stog_misc.split_string sort [';' ; ',' ] in
   let sort_fields = List.map Stog_misc.strip_string sort_fields in
   let files =
@@ -229,7 +222,9 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix doc
          file
     ) files
   in
-  let entries = List.flatten (List.map (fun f -> bib_entries_of_file ?prefix f) files) in
+  let entries = List.flatten 
+    (List.map (fun f -> bib_entries_of_file ?prefix ?loc f) files)
+  in
   let entries = sort_bib_entries sort_fields reverse entries in
   let (entries, rank) = List.fold_left
     (fun (acc, rank) e ->
@@ -245,7 +240,7 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix doc
   in
   try
     ignore(Smap.find name bib_map);
-    let msg = Printf.sprintf "A bibliography %S is already defined in %S"
+    let msg = Xml.loc_sprintf loc "A bibliography %S is already defined in %S"
       name (Stog_path.to_string doc.Stog_types.doc_path)
     in
     failwith msg
@@ -255,14 +250,14 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) ?prefix doc
 
 let init_bib env (stog,data) docs =
   let rec f_bib doc ?sort ?reverse ?prefix (data, bib_map, rank) = function
-  | Xtmpl.E (("", "bibliography"), atts, subs) ->
-      let name = Xtmpl.get_att_cdata atts ("", "name") in
-      let sort = match Xtmpl.get_att_cdata atts ("", "sort") with None -> sort | x -> x in
-      let prefix = match Xtmpl.get_att_cdata atts ("", "prefix") with None -> prefix | x -> x in
-      let reverse = match Xtmpl.get_att_cdata atts ("", "reverse") with None -> reverse | x -> x in
+  | XR.E { XR.name = ("", "bibliography") ; atts ; subs ; loc } ->
+      let name = XR.get_att_cdata atts ("", "name") in
+      let sort = match XR.get_att_cdata atts ("", "sort") with None -> sort | x -> x in
+      let prefix = match XR.get_att_cdata atts ("", "prefix") with None -> prefix | x -> x in
+      let reverse = match XR.get_att_cdata atts ("", "reverse") with None -> reverse | x -> x in
       let reverse = Stog_misc.map_opt Stog_io.bool_of_string reverse in
       let files =
-        match Xtmpl.get_att_cdata atts ("", "files") with
+        match XR.get_att_cdata atts ("", "files") with
           None -> failwith
             (Printf.sprintf "%s: No 'files' given for bibliography%s"
              (Stog_path.to_string doc.Stog_types.doc_path)
@@ -270,18 +265,18 @@ let init_bib env (stog,data) docs =
             )
         | Some s -> s
       in
-      add_bibliography ?name ?sort ?reverse ?prefix doc (data, bib_map, rank) files
-  | Xtmpl.D _
-  | Xtmpl.E _ -> (data, bib_map, rank)
+      add_bibliography ?name ?sort ?reverse ?prefix ?loc doc (data, bib_map, rank) files
+  | XR.D _ | XR.C _ | XR.PI _
+  | XR.E _ -> (data, bib_map, rank)
    in
   let f_def doc (data, bib_map, rank) ((prefix, name), atts, xmls) =
     match prefix, name with
       "", "bib-files" ->
-        add_bibliography doc (data, bib_map, rank) (Xtmpl.string_of_xmls xmls)
+        add_bibliography doc (data, bib_map, rank) (XR.to_string xmls)
     | "", "bibliographies" ->
-        let sort = Xtmpl.get_att_cdata atts ("", "sort") in
-        let prefix = Xtmpl.get_att_cdata atts ("", "prefix") in
-        let reverse = Xtmpl.get_att_cdata atts ("", "reverse") in
+        let sort = XR.get_att_cdata atts ("", "sort") in
+        let prefix = XR.get_att_cdata atts ("", "prefix") in
+        let reverse = XR.get_att_cdata atts ("", "reverse") in
         List.fold_left (f_bib doc ?sort ?reverse ?prefix) (data, bib_map, rank) xmls
     | _ -> (data, bib_map, rank)
   in
@@ -303,28 +298,28 @@ let init_bib env (stog,data) docs =
 
 let fun_level_init = Stog_engine.Fun_stog_data init_bib;;
 
-let fun_bib_field e data env atts _ =
-  match Xtmpl.get_att_cdata atts ("", "name") with
+let fun_bib_field e data env ?loc atts _ =
+  match XR.get_att_cdata atts ("", "name") with
     None ->
       warning
         (Printf.sprintf "No \"name\" attribute for bib entry %S" (e.Bibtex.id));
       (data, [])
   | Some name ->
-      (data, [Xtmpl.D (get_bib_entry_field e name)])
+      (data, [XR.cdata (get_bib_entry_field e name)])
 ;;
 
 let add_bib_entry_env env e =
   let env = List.fold_left
     (fun env (fd, v) ->
-       Xtmpl.env_add_xml
-         (Printf.sprintf "bib-entry-%s" fd) [Xtmpl.D v] env
+       XR.env_add_xml
+         (Printf.sprintf "bib-entry-%s" fd) [XR.cdata v] env
     )
       env
       e.Bibtex.fields
   in
-  let env = Xtmpl.env_add_cb "bib-field" (fun_bib_field e) env in
-  let env = Xtmpl.env_add_xml "bib-entry-id" [Xtmpl.D e.Bibtex.id] env in
-  let env = Xtmpl.env_add_xml "bib-entry-kind" [Xtmpl.D e.Bibtex.kind] env in
+  let env = XR.env_add_cb "bib-field" (fun_bib_field e) env in
+  let env = XR.env_add_xml "bib-entry-id" [XR.cdata e.Bibtex.id] env in
+  let env = XR.env_add_xml "bib-entry-kind" [XR.cdata e.Bibtex.kind] env in
   env
 ;;
 
@@ -335,7 +330,7 @@ let xml_of_format fmt =
     Printf.sprintf "<bib-entry-%s/>" field
   in
   let xml_s = Str.global_substitute re f fmt in
-  Xtmpl.xml_of_string xml_s
+  XR.from_string xml_s
 ;;
 
 let escape_bib_entry_id s =
@@ -357,13 +352,13 @@ let mk_bib_entry_link stog path e subs =
   let href =
     (Stog_path.to_string path)^"#"^(mk_bib_entry_anchor e)
   in
-  Xtmpl.E (("", "doc"),
-   Xtmpl.atts_one ("", "href") [Xtmpl.D href],
-   subs)
+  XR.node ("", "doc")
+   ~atts: (XR.atts_one ("", "href") [XR.cdata href])
+    subs
 ;;
 
-let fun_cite (stog, data) env atts subs =
-  match Xtmpl.get_att_cdata atts ("", "href") with
+let fun_cite (stog, data) env ?loc atts subs =
+  match XR.get_att_cdata atts ("", "href") with
     None ->
       error "Missing href in <cite>";
       ((stog, data), subs)
@@ -373,17 +368,17 @@ let fun_cite (stog, data) env atts subs =
           (Stog_misc.split_string href [','])
         in
         let get_def (stog, data) tag def =
-          match Xtmpl.get_att atts ("", tag) with
+          match XR.get_att atts ("", tag) with
             Some xml -> ((stog, data), xml)
           | None ->
-              let nodes = [Xtmpl.E (("", "cite-"^tag), Xtmpl.atts_empty, [])] in
-              let ((stog, data), nodes2) = Xtmpl.apply_to_xmls (stog, data) env nodes in
+              let nodes = [XR.node ("", "cite-"^tag) []] in
+              let ((stog, data), nodes2) = XR.apply_to_xmls (stog, data) env nodes in
               let res = if nodes = nodes2 then def else nodes2 in
               ((stog, data), res)
         in
         let ((stog, data), cite_begin) = get_def (stog,data) "begin" [] in
         let ((stog, data), cite_end) = get_def (stog,data) "end" [] in
-        let ((stog, data), cite_sep) = get_def (stog,data) "sep" [Xtmpl.D ", "] in
+        let ((stog, data), cite_sep) = get_def (stog,data) "sep" [XR.cdata ", "] in
 
         let f href ((stog, data), acc) =
           let (path, entry) = Smap.find href data.bib_entries in
@@ -391,14 +386,13 @@ let fun_cite (stog, data) env atts subs =
           let ((stog, data), xml) =
             match subs with
               [] -> get_def (stog, data) "format"
-                [Xtmpl.E (("", "bib-field"),
-                   Xtmpl.atts_one ("","name") [Xtmpl.D "rank"],
-                             []
-                  )
+                [XR.node ("", "bib-field")
+                   ~atts: (XR.atts_one ("","name") [XR.cdata "rank"])
+                    []
                 ]
             | _ -> ((stog, data), subs)
           in
-          let ((stog, data), text) = Xtmpl.apply_to_xmls (stog, data) env xml in
+          let ((stog, data), text) = XR.apply_to_xmls (stog, data) env xml in
           let link = mk_bib_entry_link stog path entry text in
           let acc =
             match acc with
@@ -420,18 +414,13 @@ let xml_of_bib_entry env doc_id doc ((stog, data), acc) entry =
   let tmpl = Stog_tmpl.get_template_file stog doc "bib-entry.tmpl" in
   let env2 =
     let base_rules = Stog_html.build_base_rules stog doc_id in
-    let env = Xtmpl.env_of_list base_rules in
+    let env = XR.env_of_list base_rules in
     add_bib_entry_env env entry
   in
-  let (stog, xmls) = Xtmpl.apply_to_file stog env2 tmpl in
-  let ((stog, data), xmls) = Xtmpl.apply_to_xmls (stog,data) env xmls in
+  let (stog, xmls) = XR.apply_to_file stog env2 tmpl in
+  let ((stog, data), xmls) = XR.apply_to_xmls (stog,data) env xmls in
   ((stog, data),
-   Xtmpl.E (("", "div"),
-    Xtmpl.atts_of_list
-      [ ("", "class"), [Xtmpl.D "bib-entry"] ;
-        ("", "id"), [Xtmpl.D (mk_bib_entry_anchor entry)]
-      ],
-    xmls) :: acc
+   (XH.div ~class_: "bib-entry" ~id: (mk_bib_entry_anchor entry) xmls) :: acc
   )
 ;;
 
@@ -439,9 +428,9 @@ let get_in_env = Stog_html.get_in_env;;
 let get_in_args_or_env = Stog_engine.get_in_args_or_env;;
 let get_path = Stog_html.get_path;;
 
-let fun_bibliography doc_id (stog, data) env atts subs =
+let fun_bibliography doc_id (stog, data) env ?loc atts subs =
   let ((stog, data), path) = get_path (stog, data) env in
-  let name = Xtmpl.opt_att_cdata ~def: "default" atts ("", "name") in
+  let name = XR.opt_att_cdata ~def: "default" atts ("", "name") in
   let entries =
     try
       let bib_map = Stog_path.Map.find
@@ -449,14 +438,14 @@ let fun_bibliography doc_id (stog, data) env atts subs =
       in
       try Smap.find name bib_map
       with Not_found ->
-          failwith (Printf.sprintf "Unknown bibliography %S in %S"
+          failwith (Xml.loc_sprintf loc "Unknown bibliography %S in %S"
            name (Stog_path.to_string path))
     with Not_found ->
-        failwith (Printf.sprintf "No bibliographies for %S"
+        failwith (Xml.loc_sprintf loc "No bibliographies for %S"
          (Stog_path.to_string path))
   in
   let entries =
-    match Xtmpl.get_att_cdata atts ("", "keywords") with
+    match XR.get_att_cdata atts ("", "keywords") with
       None -> entries
     | Some s ->
         let kwds = Stog_misc.split_string s [',' ; ';'] in
@@ -496,9 +485,9 @@ let add_string b s =
 ;;
 
 let rec text_of_xml b = function
-  Xtmpl.D s -> add_string b s
-| Xtmpl.E (_, _, subs) ->
-    text_of_xmls b subs
+  XR.D s -> add_string b s.Xml.text
+| XR.C _ | XR.PI _ -> ()
+| XR.E { XR.subs } -> text_of_xmls b subs
 and text_of_xmls b l = List.iter (text_of_xml b) l;;
 
 let max_size = 24 ;;
@@ -510,14 +499,14 @@ let create_id xmls =
   String.sub s 0 (min len max_size)
 ;;
 
-let fun_p tag doc (stog, data) env atts subs =
+let fun_p tag doc (stog, data) env ?loc atts subs =
   let (id, atts) =
-    match Xtmpl.get_att_cdata atts ("", "id") with
+    match XR.get_att_cdata atts ("", "id") with
       Some s -> (s, atts)
     | None ->
         (* create a hopefully unique id *)
         let id = create_id subs in
-        (id, Xtmpl.atts_one ~atts ("", "id") [Xtmpl.D id])
+        (id, XR.atts_one ~atts ("", "id") [XR.cdata id])
   in
   let set =
     try Stog_path.Map.find
@@ -527,41 +516,37 @@ let fun_p tag doc (stog, data) env atts subs =
   match Stog_types.Str_set.mem id set with
     true ->
       (* link code already generated, return same node *)
-      raise Xtmpl.No_change
+      raise XR.No_change
   | false ->
-      let ((stog,data), xmls) = Xtmpl.apply_to_string (stog,data) env "<site-url/>" in
+      let ((stog,data), xmls) = XR.apply_to_string (stog,data) env "<site-url/>" in
       let base_url =
         match xmls with
-          [Xtmpl.D s] -> s
+          [XR.D s] -> s.Xml.text
         | xml ->
-            let s = Xtmpl.string_of_xmls xml in
-            failwith (Printf.sprintf "<site-url/> does not reduce to PCData but to %S" s)
+            let s = XR.to_string xml in
+            failwith (Xml.loc_sprintf loc "<site-url/> does not reduce to PCData but to %S" s)
       in
       let link =
-        Xtmpl.E (("", "a"),
-         Xtmpl.atts_of_list
-           [("", "class"), [Xtmpl.D "paragraph-url"] ;
-             ("", "href"), [Xtmpl.D ("#"^id)]
-           ],
-         [Xtmpl.E (("", "img"),
-            Xtmpl.atts_of_list
-              [ ("", "src"), [Xtmpl.D (base_url^"/paragraph-url.png")] ;
-                ("", "alt"), [Xtmpl.D ""]
-              ],
-            [])
-         ])
+        XH.a ~class_:"paragraph-url" ~href:("#"^id)
+         [XH.img
+            ~atts: (XR.atts_of_list
+             [ ("", "alt"), [XR.cdata ""] ;
+               ("","src"), [XR.cdata (base_url^"/paragraph-url.png")] ;
+             ])
+               []
+          ]
       in
       let set = Stog_types.Str_set.add id set in
       let generated_by_doc = Stog_path.Map.add
         doc.doc_path set data.generated_by_doc
       in
       let data = { data with generated_by_doc } in
-      ((stog, data), [Xtmpl.E (("", tag), atts, link :: subs)])
+      ((stog, data), [XR.node ("", tag) ~atts (link :: subs)])
 ;;
 
 let rules_auto_ids stog doc_id =
   let doc = Stog_types.doc stog doc_id in
-  let f tag (stog, data) env atts subs =
+  let f tag (stog, data) env ?loc atts subs =
     let b =
       try Smap.find doc.Stog_types.doc_type data.auto_ids.by_type
       with Not_found -> data.auto_ids.default
@@ -569,7 +554,7 @@ let rules_auto_ids stog doc_id =
     if b then
       fun_p tag doc (stog, data) env atts subs
     else
-      raise Xtmpl.No_change
+      raise XR.No_change
   in
   [ (("", "p"), f "p") ;
     (("", "pre"), f "pre") ;
