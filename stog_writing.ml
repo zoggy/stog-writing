@@ -119,12 +119,12 @@ let fun_prepare_notes data env ?loc args subs =
   let xml_of_note (n, note_id, xml) =
     let source = note_source_id n in
     let target = match note_id with None -> note_target_id n | Some id -> id in
-    XH.div ~class_: "note" ~id: target 
+    XH.div ~class_: "note" ~id: target
       (
        (XH.sup [XH.a ~href: ("#"^source) [XR.cdata (string_of_int n)]]) ::
          (XR.cdata " ") :: xml
       )
-     
+
   in
   let xml =
     XH.div ~class_: "notes"
@@ -206,7 +206,7 @@ let sort_bib_entries sort_fields reverse entries =
   List.sort comp entries
 ;;
 
-let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false) 
+let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false)
   ?prefix ?loc doc (data, bib_map, rank) s_files =
   let sort_fields = Stog_misc.split_string sort [';' ; ',' ] in
   let sort_fields = List.map Stog_misc.strip_string sort_fields in
@@ -222,7 +222,7 @@ let add_bibliography ?(name="default") ?(sort="id") ?(reverse=false)
          file
     ) files
   in
-  let entries = List.flatten 
+  let entries = List.flatten
     (List.map (fun f -> bib_entries_of_file ?prefix ?loc f) files)
   in
   let entries = sort_bib_entries sort_fields reverse entries in
@@ -484,17 +484,30 @@ let add_string b s =
   done
 ;;
 
-let rec text_of_xml b = function
+let rec text_of_xml with_atts b = function
   XR.D s -> add_string b s.Xml.text
 | XR.C _ | XR.PI _ -> ()
-| XR.E { XR.subs } -> text_of_xmls b subs
-and text_of_xmls b l = List.iter (text_of_xml b) l;;
+| XR.E { XR.subs ; XR.atts } ->
+    if with_atts then text_of_atts b atts ;
+    text_of_xmls with_atts b subs
+and text_of_atts b atts =
+  Xtmpl_xml.Name_map.iter
+    (fun _ xmls -> text_of_xmls true b xmls) atts
+and text_of_xmls with_atts b l = List.iter (text_of_xml with_atts b) l;;
 
 let max_size = 24 ;;
 let create_id xmls =
   let b = Buffer.create 256 in
-  text_of_xmls b xmls;
-  let s = Stog_misc.strip_string (Buffer.contents b) in
+  text_of_xmls false b xmls;
+  let s =
+    match Stog_misc.strip_string (Buffer.contents b) with
+      "" ->
+        (* try again, this time using attribute contents *)
+        Buffer.reset b ;
+        text_of_xmls true b xmls ;
+        Stog_misc.strip_string (Buffer.contents b)
+    | s -> s
+  in
   let len = String.length s in
   String.sub s 0 (min len max_size)
 ;;

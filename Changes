@@ -1,3 +1,6 @@
+Next release:
+- when generating ids, use attribute values if could not get a non-empty id from cdata
+
 Release 0.16.0:
 - use Xtmpl > 0.13.0
 
