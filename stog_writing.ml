@@ -36,6 +36,8 @@ let error = Stog_plug.error ~info: module_name;;
 let rc_file stog = Stog_plug.plugin_config_file stog module_name;;
 
 open Stog_types;;
+type auto_id_spec = Nolink | Link of string option
+
 module Smap = Stog_types.Str_map;;
 module XR = Xtmpl_rewrite
 module XH = Xtmpl_xhtml
@@ -43,13 +45,50 @@ module Xml = Xtmpl_xml
 
 module W = Ocf.Wrapper
 
-let smap_wrapper = W.string_map
-  ~fold: Smap.fold ~add: Smap.add ~empty: Smap.empty
+module J = Yojson.Safe
+
+let smap_wrapper w  = W.string_map
+  ~fold: Smap.fold ~add: Smap.add ~empty: Smap.empty w
+
+let auto_id_spec_wrapper =
+  let to_json ?with_doc = function
+    Nolink -> `Bool false
+  | Link None -> `Bool true
+  | Link (Some str) -> `String str
+  in
+  let from_json ?def = function
+  | `Bool false -> Nolink
+  | `Bool true -> Link None
+  | `String str -> Link (Some str)
+  | json -> Ocf.invalid_value json
+  in
+  Ocf.Wrapper.make to_json from_json
+
+let default_tags =
+ List.fold_left
+   (fun acc (tag, spec) -> Smap.add tag spec acc)
+   Smap.empty
+   [ "p", Link None ; "pre", Link (Some "div") ]
+
+type spec = {
+  links : bool [@ocf W.bool, true] ;
+  tags : auto_id_spec Smap.t [@ocf smap_wrapper auto_id_spec_wrapper, Smap.empty] ;
+  } [@@ocf]
+
+let default_spec = { default_spec with tags = default_tags }
+
+let spec_wrapper default =
+  let to_json = spec_wrapper.W.to_json in
+  let from_json ?def = function
+  | `Bool links -> { links ; tags = if default then default_tags else Smap.empty}
+  | json -> spec_wrapper.W.from_json ?def json
+  in
+  W.make to_json from_json
 
 type auto_ids =
-  { default : bool  [@ocf W.bool, true] ;
-    by_type : bool Smap.t
-      [@ocf smap_wrapper W.bool, Smap.empty]
+  { default : spec  [@ocf spec_wrapper true, default_spec] ;
+    by_type : spec Smap.t
+      [@ocf smap_wrapper (spec_wrapper false), Smap.empty]
       [@ocf.doc "associations between document type and boolean, like { page: false, post: true, ..}"] ;
   } [@@ocf]
 
@@ -512,7 +551,7 @@ let create_id xmls =
   String.sub s 0 (min len max_size)
 ;;
 
-let fun_p tag doc (stog, data) env ?loc atts subs =
+let fun_p ?embed tag doc (stog, data) env ?loc atts subs =
   let (id, atts) =
     match XR.get_att_cdata atts ("", "id") with
       Some s -> (s, atts)
@@ -554,28 +593,67 @@ let fun_p tag doc (stog, data) env ?loc atts subs =
         doc.doc_path set data.generated_by_doc
       in
       let data = { data with generated_by_doc } in
-      ((stog, data), [XR.node ("", tag) ~atts (link :: subs)])
+      let xml =
+        match embed with
+          None -> XR.node tag ~atts (link :: subs)
+        | Some str ->
+            let block_tag = Xtmpl_xml.name_of_string str in
+            let block_atts = XR.atts_one ("","class") [XR.cdata "anchor-block"] in
+            XR.node block_tag ~atts: block_atts [ link; XR.node tag ~atts subs]
+      in
+      ((stog, data), [xml])
 ;;
 
-let rules_auto_ids stog doc_id =
+let tags_of_tag_spec map =
+ Smap.fold
+    (fun tag spec acc ->
+       match spec with
+         Link x -> (tag, x) :: acc
+       | Nolink -> acc
+    )
+    map []
+
+let rules_auto_ids stog data doc_id =
   let doc = Stog_types.doc stog doc_id in
-  let f tag (stog, data) env ?loc atts subs =
-    let b =
-      try Smap.find doc.Stog_types.doc_type data.auto_ids.by_type
-      with Not_found -> data.auto_ids.default
-    in
-    if b then
-      fun_p tag doc (stog, data) env atts subs
-    else
-      raise XR.No_change
+  let handled_tags =
+    try
+      let spec = Smap.find doc.Stog_types.doc_type data.auto_ids.by_type in
+      if spec.links then
+        if Smap.is_empty spec.tags then
+          tags_of_tag_spec data.auto_ids.default.tags
+        else
+          tags_of_tag_spec spec.tags
+      else
+        []
+    with Not_found ->
+        if data.auto_ids.default.links then
+          tags_of_tag_spec data.auto_ids.default.tags
+        else
+          []
   in
-  [ (("", "p"), f "p") ;
-    (("", "pre"), f "pre") ;
-  ]
+  let f ?embed tag (stog, data) env ?loc atts subs =
+    fun_p ?embed tag doc (stog, data) env atts subs
+  in
+  List.map
+    (fun (tag, embed) ->
+      let tag = Xtmpl_xml.name_of_string tag in
+      (tag, f ?embed tag)
+    )
+    handled_tags
 ;;
 
 let fun_level_auto_ids =
-  Stog_engine.fun_apply_stog_data_doc_rules rules_auto_ids
+  let f env (stog, data) docs =
+    Stog_types.Doc_set.fold
+      (fun doc_id acc ->
+         let rules = rules_auto_ids stog data doc_id in
+         let env = XR.env_of_list ~env rules in
+         Stog_engine.apply_stog_data_env_doc acc env doc_id
+      )
+     docs (stog, data)
+  in
+  Stog_engine.Fun_stog_data f
+  (*fun_apply_stog_data_doc_rules rules_auto_ids*)
 ;;
 
 let level_funs =
