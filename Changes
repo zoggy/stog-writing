@@ -1,4 +1,4 @@
-Next release:
+Release 0.17.0:
 - when generating ids, use attribute values if could not get a non-empty id from cdata
 - in configuration file, it is now possible to specify for each tag whether
   to add anchor link and whether to embed the link and the block in another tag
