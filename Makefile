@@ -26,7 +26,7 @@
 #                                                                               #
 #################################################################################
 
-# DO NOT FORGET TO UPDATE META FILE
+# DO NOT FORGET TO UPDATE META and opam FILES
 VERSION=0.17.0
 
 MKDIR=mkdir -p
