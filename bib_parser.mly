@@ -48,8 +48,8 @@ open Bibtex
 entry:
   k=Entry_kind LBRACE id=Ident COMMA l=list(field) RBRACE
   {
-    { kind = String.lowercase k ; id = id ; fields = l }
+    { kind = String.lowercase_ascii k ; id = id ; fields = l }
   }
 field:
-  n=Ident EQUAL s=String option(COMMA) { (String.lowercase n, s) }
-| n=Ident s=Equal_braced_string option(COMMA) { (String.lowercase n, s) }
+  n=Ident EQUAL s=String option(COMMA) { (String.lowercase_ascii n, s) }
+| n=Ident s=Equal_braced_string option(COMMA) { (String.lowercase_ascii n, s) }
