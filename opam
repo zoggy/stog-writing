@@ -16,7 +16,7 @@ install: [
 ]
 remove: [["ocamlfind" "remove" "stog-writing"]]
 depends: [
-  "stog" {= "0.17.0" }
+  "stog" {>= "0.17.0" & < "0.18"}
   "menhir" {>= "20120123"}
 ]
 
